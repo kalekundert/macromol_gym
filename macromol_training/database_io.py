@@ -4,7 +4,9 @@ import numpy as np
 import json
 import io
 
-from more_itertools import one, zip_broadcast, unique_everseen as unique
+from more_itertools import (
+        one, flatten, zip_broadcast, unique_everseen as unique,
+)
 from textwrap import dedent
 from typing import Any
 
@@ -82,14 +84,17 @@ def init_db(db):
     cur.execute('''\
             CREATE TABLE IF NOT EXISTS subchain (
                 zone_id INTEGER NOT NULL REFERENCES zone(id),
-                pdb_id TEXT NOT NULL
+                pdb_id TEXT NOT NULL,
+                symmetry_mate INTEGER NOT NULL
             )
     ''')
     cur.execute('''\
             CREATE TABLE IF NOT EXISTS subchain_pair (
                 zone_id INTEGER NOT NULL REFERENCES zone(id),
                 pdb_id_1 TEXT NOT NULL,
-                pdb_id_2 TEXT NOT NULL
+                symmetry_mate_1 INTEGER NOT NULL,
+                pdb_id_2 TEXT NOT NULL,
+                symmetry_mate_2 INTEGER NOT NULL
             )
     ''')
     cur.execute('''\
@@ -176,8 +181,8 @@ def insert_zone(
         *,
         center_A,
         neighbor_ids,
-        subchains,
-        subchain_pairs,
+        subchains=[],
+        subchain_pairs=[],
 ):
     cur = db.execute(
             '''\
@@ -191,17 +196,21 @@ def insert_zone(
 
     db.executemany(
             '''\
-            INSERT INTO subchain (zone_id, pdb_id)
-            VALUES (?, ?)
+            INSERT INTO subchain (zone_id, pdb_id, symmetry_mate)
+            VALUES (?, ?, ?)
             ''',
-            zip_broadcast(zone_id, subchains),
+            [(zone_id, *subchain) for subchain in subchains]
     )
     db.executemany(
             '''\
-            INSERT INTO subchain_pair (zone_id, pdb_id_1, pdb_id_2)
-            VALUES (?, ?, ?)
+            INSERT INTO subchain_pair (
+                zone_id,
+                pdb_id_1, symmetry_mate_1,
+                pdb_id_2, symmetry_mate_2
+            )
+            VALUES (?, ?, ?, ?, ?)
             ''',
-            [(zone_id, *sorted(pair)) for pair in subchain_pairs],
+            [(zone_id, *flatten(sorted(pair))) for pair in subchain_pairs],
     )
     db.executemany(
             '''\
@@ -263,21 +272,18 @@ def select_zone_atoms(db, zone_id):
 
 def select_zone_subchains(db, zone_id):
     cur = db.execute('''\
-            SELECT subchain.pdb_id
+            SELECT pdb_id, symmetry_mate
             FROM subchain
-            JOIN zone ON zone.id = subchain.zone_id
-            WHERE zone.id = ?
+            WHERE zone_id = ?
     ''', [zone_id])
-    cur.row_factory = _scalar_row_factory
     subchains = cur.fetchall()
 
     cur = db.execute('''\
-            SELECT subchain_pair.pdb_id_1, subchain_pair.pdb_id_2
+            SELECT pdb_id_1, symmetry_mate_1, pdb_id_2, symmetry_mate_2
             FROM subchain_pair
-            JOIN zone ON zone.id = subchain_pair.zone_id
-            WHERE zone.id = ?
+            WHERE zone_id = ?
     ''', [zone_id])
-    subchain_pairs = cur.fetchall()
+    subchain_pairs = [((a, b), (c, d)) for a, b, c, d in cur.fetchall()]
 
     return subchains, subchain_pairs
 

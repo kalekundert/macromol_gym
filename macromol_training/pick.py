@@ -134,7 +134,10 @@ def pick_training_zones(
                     | f(prune_hydrogen)
                     | f(annotate_polymers, self.mmcif.entities)
             )
-            self.subchain_counts = count_subchain_atoms(self.asym_atoms)
+            self.subchain_counts = count_atoms(
+                    self.asym_atoms,
+                    ['subchain_id'],
+            )
 
         def propose(self, assembly):
             self.assembly = assembly
@@ -401,11 +404,24 @@ def find_zone_subchains(
         solo_fraction_of_subchain: float,
         pair_fraction_of_zone: float,
         pair_fraction_of_subchain: float,
-):
+        ):
+    """
+    Return the subchains and subchain pairs that are present in the specified 
+    volume.
+
+    In order for a subchain to be considered "present", it must either comprise 
+    a certain fraction of all the atoms in the zone (``*_fraction_of_zone``) or 
+    all the atoms in that subchain (``*_fraction_of_subchain``).
+
+    Subchains are identified as ``(subchain_id, symmetry_mate)`` tuples.  This 
+    ensure that each subchain is uniquely identified, even if multiple 
+    symmetric copies are present.
+    """
     atoms = select_nearby_atoms(atoms, kd_tree, center_A, radius_A)
     atom_counts = (
-            count_subchain_atoms(atoms)
+            count_atoms(atoms, ['subchain_id', 'symmetry_mate'])
             .join(asym_counts, on='subchain_id', suffix='_asym')
+            .sort('subchain_id', 'symmetry_mate')
             .with_columns(
                 fraction_of_zone=pl.col('occupancy') / pl.col('occupancy').sum(),
                 fraction_of_subchain=pl.col('occupancy') / pl.col('occupancy_asym'),
@@ -417,8 +433,8 @@ def find_zone_subchains(
                     (pl.col('fraction_of_zone') >= solo_fraction_of_zone) |
                     (pl.col('fraction_of_subchain') >= solo_fraction_of_subchain)
             )
-            .get_column('subchain_id')
-            .to_list()
+            .select('subchain_id', 'symmetry_mate')
+            .rows()
     )
     pair_subchains = (
             atom_counts
@@ -426,8 +442,8 @@ def find_zone_subchains(
                 (pl.col('fraction_of_zone') >= pair_fraction_of_zone) |
                 (pl.col('fraction_of_subchain') >= pair_fraction_of_subchain)
             )
-            .get_column('subchain_id')
-            .to_list()
+            .select('subchain_id', 'symmetry_mate')
+            .rows()
     )
     return solo_subchains, list(combinations(pair_subchains, r=2))
 
@@ -449,10 +465,10 @@ def calc_density_atoms_nm3(atoms, kd_tree, center_A, radius_A):
 def calc_sphere_volume_nm3(radius_A):
     return 4/3 * pi * (radius_A / 10)**3
 
-def count_subchain_atoms(atoms):
+def count_atoms(atoms, group_by):
     return (
             atoms
-            .group_by('subchain_id')
+            .group_by(*group_by)
             .agg(pl.col('occupancy').sum())
     )
 

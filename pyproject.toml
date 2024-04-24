@@ -9,21 +9,32 @@ authors = [
 ]
 readme = 'README.rst'
 dynamic = ["version", "description"]
-requires-python = "~=3.10"
+requires-python = "~=3.12"
 classifiers = [
   'Programming Language :: Python :: 3',
 ]
 dependencies = [
   'aiohttp',
+  'docopt',
+  'icosphere',
+  'macromol_census',
+  'macromol_dataframe',
+  'more_itertools',
+  'nestedtext',
   'networkx',
   'numpy',
-  'macromol_census',
+  'periodictable',
+  'pipeline_func',
+  'scipy',
+  'scikit-learn',
+  'tqdm',
 ]
 
 [project.optional-dependencies]
 test = [
   'pytest',
   'parametrize_from_file',
+  'pytest_unordered',
 ]
 doc = [
   'sphinx',
@@ -32,7 +43,10 @@ doc = [
 ]
 
 [project.scripts]
+mmt_init = 'macromol_training.init:main'
+mmt_pick_training_examples = 'macromol_training.pick:main'
 mmt_fetch_interpro_clusters = 'macromol_training.interpro:main'
+mmt_split_training_examples = 'macromol_training.split:main'
 
 [project.urls]
 'Documentation' = 'https://macromol-training.readthedocs.io/en/latest/'
