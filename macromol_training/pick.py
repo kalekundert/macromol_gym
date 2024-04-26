@@ -34,6 +34,7 @@ from .database_io import (
         insert_structure, insert_assembly, insert_zone,
         insert_neighbors, select_neighbors,
 )
+from .density import make_density_interpolator
 from .geometry import (
         tetrahedron_faces,
         cube_faces,
@@ -57,7 +58,7 @@ from pipeline_func import f
 from itertools import product, combinations
 from more_itertools import one, flatten
 from tqdm import tqdm
-from math import pi, ceil
+from math import ceil
 from pathlib import Path
 from hashlib import md5
 from dataclasses import dataclass, fields, asdict
@@ -70,7 +71,9 @@ class Config:
     zone_size_A: float
 
     density_check_radius_A: float
-    density_check_threshold_atoms_nm3: float
+    density_check_voxel_size_A: float
+    density_check_min_atoms_nm3: float
+    density_check_max_atoms_nm3: float
 
     subchain_check_radius_A: float
     subchain_check_fraction_of_zone: float
@@ -80,11 +83,10 @@ class Config:
 
     neighbor_geometry: str
     neighbor_distance_A: float
-    neighbor_density_check_radius_A: float
-    neighbor_density_check_threshold_atoms_nm3: float
     neighbor_count_threshold: int
 
     allowed_elements: list[str]
+    nonbiological_residues: list[str]
 
     atom_inclusion_radius_A: float
     atom_inclusion_boundary_depth_A: float
@@ -95,8 +97,8 @@ def main():
     args = docopt.docopt(__doc__)
 
     train_db = open_db(args['<db>'])
-    census_db = open_census_db(args['<census>'])
-    config = load_config(args['<census>'], nt.load(args['<config>']))
+    census_db = open_census_db(census_path := args['<census>'], read_only=True)
+    config = load_config(train_db, census_path, nt.load(args['<config>']))
     pdb_dir = Path(os.environ['PDB_MMCIF'])
 
     try:
@@ -109,6 +111,26 @@ def main():
         )
     except KeyboardInterrupt:
         pass
+
+def load_config(db, census_path: str, config: dict[str, Any]):
+    config['census_md5'] = _hash_census_db(census_path)
+
+    db_config = _select_config(db)
+    user_config = _make_config(config)
+
+    if db_config:
+        if db_config != user_config:
+            db_dict = asdict(db_config)
+            user_dict = asdict(user_config)
+            diff_keys = [
+                    k for k in db_dict
+                    if db_dict[k] != user_dict[k]
+            ]
+            raise ValueError(f"the following parameters have changed since the last run: {diff_keys}\nTo use different parameters, create a new database.")
+    else:
+        _insert_config(db, user_config)
+
+    return user_config
 
 def pick_training_zones(
         db, census, *,
@@ -149,34 +171,38 @@ def pick_training_zones(
             )
             self.kd_tree = kd_tree = make_kd_tree(atoms)
 
-            for center_A in calc_zone_centers_A(atoms, config.zone_size_A):
-                if not check_zone_density(
-                        atoms,
-                        kd_tree,
-                        center_A=center_A,
-                        radius_A=config.density_check_radius_A,
-                        min_density_atoms_nm3=config.density_check_threshold_atoms_nm3,
-                ):
-                    continue
+            if not check_elements(atoms, config.allowed_elements):
+                return
 
-                neighbor_ids = find_zone_neighbors(
+            calc_density_atoms_nm3 = make_density_interpolator(
+                    prune_nonbiological_residues(
                         atoms,
-                        kd_tree,
+                        config.nonbiological_residues,
+                    ),
+                    config.density_check_radius_A,
+                    config.density_check_voxel_size_A,
+            )
+
+            # If any part of the structure exceeds the density threshold, take 
+            # this to mean that the structure probably has one molecule 
+            # superimposed on another, and should be excluded from the dataset.
+            max_atoms_nm3 = np.max(calc_density_atoms_nm3.values)
+            if max_atoms_nm3 > config.density_check_max_atoms_nm3:
+                return
+
+            zone_centers_A = calc_zone_centers_A(atoms, config.zone_size_A)
+            zone_densities_atoms_nm3 = calc_density_atoms_nm3(zone_centers_A)
+            dense_enough = zone_densities_atoms_nm3 > \
+                    config.density_check_min_atoms_nm3
+
+            for center_A in zone_centers_A[dense_enough]:
+                neighbor_ids = find_zone_neighbors(
+                        calc_density_atoms_nm3,
                         center_A=center_A,
                         offsets_A=neighbor_centers_A,
-                        radius_A=config.neighbor_density_check_radius_A,
-                        min_density_atoms_nm3=config.neighbor_density_check_threshold_atoms_nm3,
+                        min_density_atoms_nm3=config.density_check_min_atoms_nm3,
                 )
                 if len(neighbor_ids) < config.neighbor_count_threshold:
-                    continue
-
-                if not check_zone_elements(
-                        atoms,
-                        kd_tree,
-                        center_A=center_A,
-                        radius_A=config.atom_inclusion_radius_A,
-                        whitelist=config.allowed_elements,
-                ):
                     continue
 
                 subchains, subchain_pairs = find_zone_subchains(
@@ -230,7 +256,7 @@ def pick_training_zones(
                             subchain_pairs=candidate.subchain_pairs,
                     )
 
-                save_memento(db, memento)
+                _save_memento(db, memento)
 
             # These variables should always be filled in by `propose()` before 
             # they're used here.  Delete them so that we don't mistakenly use 
@@ -247,10 +273,10 @@ def pick_training_zones(
     visit_assemblies(
             census,
             ZoneVisitor,
-            memento=load_memento(db),
+            memento=_load_memento(db),
             progress_factory=progress_factory,
     )
-    delete_memento(db)
+    _delete_memento(db)
 
 def load_neighbors(db, geometry, distance_A):
     neighbors = select_neighbors(db)
@@ -284,6 +310,20 @@ def annotate_polymers(asym_atoms, entities):
             is_polymer=pl.col('type') == 'polymer',
     )
     return asym_atoms.join(polymers, on='entity_id', how='left')
+
+def check_elements(
+        atoms: Atoms,
+        whitelist: float,
+):
+    if not whitelist:
+        return True
+
+    whitelist = [e.upper() for e in whitelist]
+    return (
+            atoms
+            .filter(~pl.col('element').str.to_uppercase().is_in(whitelist))
+            .is_empty()
+    )
 
 def calc_zone_centers_A(atoms: Atoms, spacing_A: float):
     """
@@ -348,50 +388,16 @@ def calc_zone_centers_A(atoms: Atoms, spacing_A: float):
 
     return zones_p @ frame_ip
 
-def check_zone_density(
-        atoms: Atoms,
-        kd_tree: KDTree,
-        *,
-        center_A: Coord,
-        radius_A: float,
-        min_density_atoms_nm3: float,
-):
-    atoms_nm3 = calc_density_atoms_nm3(atoms, kd_tree, center_A, radius_A)
-    return atoms_nm3 > min_density_atoms_nm3
-
 def find_zone_neighbors(
-        atoms: Atoms,
-        kd_tree: KDTree,
+        density_calculator,
         *,
         center_A: Coord,
         offsets_A: Coords3,
-        radius_A: float,
         min_density_atoms_nm3: float,
 ):
-    neighbors = []
-
-    for i, neighbor_A in enumerate(center_A + offsets_A):
-        atoms_nm3 = calc_density_atoms_nm3(atoms, kd_tree, neighbor_A, radius_A)
-        if atoms_nm3 >= min_density_atoms_nm3:
-            neighbors.append(i)
-
-    return neighbors
-
-def check_zone_elements(
-        atoms: Atoms,
-        kd_tree: KDTree,
-        *,
-        center_A: Coord,
-        radius_A: float,
-        whitelist: float,
-):
-    atoms = select_nearby_atoms(atoms, kd_tree, center_A, radius_A)
-    whitelist = [e.upper() for e in whitelist]
-    return (
-            atoms
-            .filter(~pl.col('element').str.to_uppercase().is_in(whitelist))
-            .is_empty()
-    )
+    atoms_nm3 = density_calculator(center_A + offsets_A)
+    indices = np.arange(len(offsets_A))[atoms_nm3 > min_density_atoms_nm3]
+    return list(indices)
 
 def find_zone_subchains(
         atoms: Atoms,
@@ -452,25 +458,18 @@ def select_nearby_atoms(atoms, kd_tree, center_A, radius_A):
     i = one(kd_tree.query_radius(center_A, radius_A))
     return atoms[i]
 
-def calc_density_atoms_nm3(atoms, kd_tree, center_A, radius_A):
-    atoms = select_nearby_atoms(
-            atoms,
-            kd_tree,
-            center_A,
-            radius_A,
-    )
-    volume_nm3 = calc_sphere_volume_nm3(radius_A)
-    return atoms['occupancy'].sum() / volume_nm3
-
-def calc_sphere_volume_nm3(radius_A):
-    return 4/3 * pi * (radius_A / 10)**3
-
 def count_atoms(atoms, group_by):
     return (
             atoms
             .group_by(*group_by)
             .agg(pl.col('occupancy').sum())
     )
+
+def prune_nonbiological_residues(
+        atoms: Atoms,
+        blacklist: list[str],
+):
+    return atoms.filter(~pl.col('comp_id').is_in(blacklist))
 
 def prune_distant_atoms(
         atoms: Atoms,
@@ -497,26 +496,6 @@ def prune_distant_atoms(
 def make_kd_tree(atoms):
     return KDTree(get_atom_coords(atoms))
 
-
-def load_config(db, census_path: str, config: dict[str, Any]):
-    config['census_md5'] = hash_census_db(census_path)
-
-    db_config = _select_config(db)
-    user_config = _make_config(config)
-
-    if db_config:
-        if db_config != user_config:
-            db_dict = asdict(db_config)
-            user_dict = asdict(user_config)
-            diff_keys = [
-                    k for k in db_dict
-                    if db_dict[k] != user_dict[k]
-            ]
-            raise ValueError(f"the following parameters have changed since the last run: {diff_keys}\nTo use different parameters, create a new database.")
-    else:
-        _insert_config(db, user_config)
-
-    return user_config
 
 def _make_config(config):
 
@@ -566,13 +545,34 @@ def _make_config(config):
 
         return user_elements
 
+    @validator
+    def residues(key, value):
+        if value == '-':
+            return []
+
+        path = Path(value)
+        if not path.exists():
+            raise ValueError(f"{key!r} must be a path, but the following doesn't exist: {path}")
+
+        residues = [
+                x.strip()
+                for x in path.read_text().splitlines()
+        ]
+
+        if too_long := [x for x in residues if len(x) > 3]:
+            raise ValueError(f"{key!r} must be a list of residue names, but the following are too long: {too_long}")
+
+        return residues
+
     validators = dict(
             census_md5=string,
 
             zone_size_A=quantity,
 
             density_check_radius_A=quantity,
-            density_check_threshold_atoms_nm3=quantity,
+            density_check_voxel_size_A=quantity,
+            density_check_min_atoms_nm3=quantity,
+            density_check_max_atoms_nm3=quantity,
 
             subchain_check_radius_A=quantity,
             subchain_check_fraction_of_zone=fraction,
@@ -582,11 +582,10 @@ def _make_config(config):
 
             neighbor_geometry=string,
             neighbor_distance_A=quantity,
-            neighbor_density_check_radius_A=quantity,
-            neighbor_density_check_threshold_atoms_nm3=quantity,
             neighbor_count_threshold=integer,
 
             allowed_elements=elements,
+            nonbiological_residues=residues,
 
             atom_inclusion_radius_A=quantity,
             atom_inclusion_boundary_depth_A=quantity,
@@ -609,24 +608,25 @@ def _select_config(db):
     if missing_keys := set(keys) - set(config):
         raise ValueError(f"failed to load config from database.\nThe following required parameters were not found: {missing_keys!r}")
 
-    # SQLite doesn't have a way to know that this is supposed to be a 
-    # JSON-encoded list, so we have to decode it manually.
+    # SQLite doesn't have a way to know that these are supposed to be 
+    # JSON-encoded lists, so we have to decode them manually.
     config['allowed_elements'] = json.loads(config['allowed_elements'])
+    config['nonbiological_residues'] = json.loads(config['nonbiological_residues'])
 
     return Config(**config)
 
 def _insert_config(db, config):
     upsert_metadata(db, asdict(config))
 
-def hash_census_db(db_path):
+def _hash_census_db(db_path):
     hash = md5()
     hash.update(Path(db_path).read_bytes())
     return hash.hexdigest()
 
-def save_memento(db, memento):
+def _save_memento(db, memento):
     upsert_metadata(db, {'census_memento': pickle.dumps(memento)})
 
-def load_memento(db):
+def _load_memento(db):
     try:
         memento = select_metadatum(db, 'census_memento')
     except KeyError:
@@ -634,7 +634,7 @@ def load_memento(db):
     else:
         return pickle.loads(memento)
 
-def delete_memento(db):
+def _delete_memento(db):
     delete_metadatum(db, 'census_memento')
 
 
