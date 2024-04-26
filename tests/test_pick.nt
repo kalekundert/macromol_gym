@@ -1,0 +1,959 @@
+test_prune_nonbiological_residues:
+  -
+    id: baseline
+    atoms:
+      > resn resi
+      > MET  1
+      > GLY  2
+      > THR  3
+      > GLN  4
+      > LYS  5
+      > VAL  6
+      > GLC  7
+    blacklist:
+      - GLC
+    expected:
+      > resn resi
+      > MET  1
+      > GLY  2
+      > THR  3
+      > GLN  4
+      > LYS  5
+      > VAL  6
+
+test_prune_distant_atoms:
+  -
+    id: baseline
+    # PyMOL> load pdb/1qjg_mnt.cif
+    # PyMOL> iterate_state 0, all, print(f'{resn:4} {resi:4} {name:<4} {x:5.3f} {y:5.3f} {z:5.3f}')
+    atoms:
+      > resn resi atom x      y       z
+      > MET  1    N    10.694 86.076 -17.884
+      > MET  1    CA    9.356 86.709 -18.062
+      > MET  1    C     8.548 85.831 -19.012
+      > MET  1    O     8.958 85.627 -20.159
+      > MET  1    CB    9.510 88.112 -18.660
+      > MET  1    CG    8.245 88.955 -18.591
+      > MET  1    SD    7.719 89.207 -16.879
+      > MET  1    CE    6.310 88.074 -16.761
+      > ASN  2    N     7.410 85.316 -18.548
+      > ASN  2    CA    6.596 84.449 -19.389
+      > ASN  2    C     5.205 84.954 -19.711
+      > ASN  2    O     4.231 84.652 -19.021
+      > ASN  2    CB    6.506 83.052 -18.794
+      > ASN  2    CG    7.857 82.460 -18.510
+      > ASN  2    ND2   7.874 81.403 -17.729
+      > ASN  2    OD1   8.883 82.969 -18.959
+      > THR  3    N     5.127 85.753 -20.761
+      > THR  3    CA    3.865 86.272 -21.226
+      > THR  3    C     3.507 85.320 -22.359
+      > THR  3    O     4.363 84.575 -22.833
+      > THR  3    CB    4.029 87.713 -21.764
+      > THR  3    CG2   4.446 88.643 -20.655
+      > THR  3    OG1   5.029 87.746 -22.789
+    # PyMOL> select c, resi 2 and name CA
+    centers_A:
+      > 6.596 84.449 -19.389
+    radius_A: 2
+    boundary_depth_A: 1
+    # PyMOL> select r2, all within 2 of c
+    # PyMOL> select r3, (not r2) within 3 of c
+    expected:
+      > resn resi atom x      y       z      oob
+      > MET  1    C     8.548 85.831 -19.012 1
+      > MET  1    O     8.958 85.627 -20.159 1
+      > ASN  2    N     7.410 85.316 -18.548 0
+      > ASN  2    CA    6.596 84.449 -19.389 0
+      > ASN  2    C     5.205 84.954 -19.711 0
+      > ASN  2    CB    6.506 83.052 -18.794 0
+      > ASN  2    O     4.231 84.652 -19.021 1
+      > ASN  2    CG    7.857 82.460 -18.510 1
+      > ASN  2    OD1   8.883 82.969 -18.959 1
+      > THR  3    N     5.127 85.753 -20.761 1
+  -
+    id: two-centers
+    # PyMOL> load pdb/1qjg_mnt.cif
+    # PyMOL> iterate_state 0, all, print(f'{resn:4} {resi:4} {name:<4} {x:5.3f} {y:5.3f} {z:5.3f}')
+    atoms:
+      > resn resi atom x      y       z
+      > MET  1    N    10.694 86.076 -17.884
+      > MET  1    CA    9.356 86.709 -18.062
+      > MET  1    C     8.548 85.831 -19.012
+      > MET  1    O     8.958 85.627 -20.159
+      > MET  1    CB    9.510 88.112 -18.660
+      > MET  1    CG    8.245 88.955 -18.591
+      > MET  1    SD    7.719 89.207 -16.879
+      > MET  1    CE    6.310 88.074 -16.761
+      > ASN  2    N     7.410 85.316 -18.548
+      > ASN  2    CA    6.596 84.449 -19.389
+      > ASN  2    C     5.205 84.954 -19.711
+      > ASN  2    O     4.231 84.652 -19.021
+      > ASN  2    CB    6.506 83.052 -18.794
+      > ASN  2    CG    7.857 82.460 -18.510
+      > ASN  2    ND2   7.874 81.403 -17.729
+      > ASN  2    OD1   8.883 82.969 -18.959
+      > THR  3    N     5.127 85.753 -20.761
+      > THR  3    CA    3.865 86.272 -21.226
+      > THR  3    C     3.507 85.320 -22.359
+      > THR  3    O     4.363 84.575 -22.833
+      > THR  3    CB    4.029 87.713 -21.764
+      > THR  3    CG2   4.446 88.643 -20.655
+      > THR  3    OG1   5.029 87.746 -22.789
+    # PyMOL> select c, resi 1+3 and name CA
+    centers_A:
+      > 9.356 86.709 -18.062
+      > 3.865 86.272 -21.226
+    radius_A: 2
+    boundary_depth_A: 1
+    # PyMOL> select r2, all within 2 of c
+    # PyMOL> select r3, (not r2) within 3 of c
+    expected:
+      > resn resi atom x      y       z      oob
+      > MET  1    N    10.694 86.076 -17.884 0
+      > MET  1    CA    9.356 86.709 -18.062 0
+      > MET  1    C     8.548 85.831 -19.012 0
+      > MET  1    O     8.958 85.627 -20.159 1
+      > MET  1    CB    9.510 88.112 -18.660 0
+      > MET  1    CG    8.245 88.955 -18.591 1
+      > ASN  2    N     7.410 85.316 -18.548 1
+      > ASN  2    C     5.205 84.954 -19.711 1
+      > ASN  2    O     4.231 84.652 -19.021 1
+      > THR  3    N     5.127 85.753 -20.761 0
+      > THR  3    CA    3.865 86.272 -21.226 0
+      > THR  3    C     3.507 85.320 -22.359 0
+      > THR  3    O     4.363 84.575 -22.833 1
+      > THR  3    CB    4.029 87.713 -21.764 0
+      > THR  3    CG2   4.446 88.643 -20.655 1
+      > THR  3    OG1   5.029 87.746 -22.789 1
+
+test_count_atoms:
+  -
+    atoms:
+      > subchain occ
+      > A        1
+    expected:
+      > subchain occ
+      > A        1
+  -
+    atoms:
+      > subchain occ
+      > A        1
+      > B        1
+    expected:
+      > subchain occ
+      > A        1
+      > B        1
+  -
+    atoms:
+      > subchain occ
+      > A        1
+      > A        1
+      > A        1
+      > B        1
+      > B        1
+    expected:
+      > subchain occ
+      > A        3
+      > B        2
+  -
+    atoms:
+      > subchain occ
+      > A        0.5
+      > A        0.5
+      > A        0.5
+      > B        1
+      > B        1
+    expected:
+      > subchain occ
+      > A        1.5
+      > B        2
+  -
+    id: 1aa5
+    # I chose this structure because it's relatively small and has lots of 
+    # partial occupancy.  I calculated the total occupancy of subchains A-B in 
+    # PyMOL.  The rest I calculated by hand.
+    atoms: 1aa5.cif.gz
+    expected:
+      > subchain occ
+      > A        131.74
+      > B        132.00
+      > C         45.75
+      > D         46.00
+      > E          8.00
+      > F          1.00
+      > G          1.00
+      > H          1.00
+      > I          1.00
+      > J         29.10
+      > K         16.29
+
+test_find_zone_subchains:
+  -
+    id: solo-zone-yes
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 0    B         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 0    B         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 0.74
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 1
+    pair_fraction_of_subchain: 1
+    subchains:
+      [[A,0]]
+    subchain_pairs:
+      []
+  -
+    id: solo-zone-yes-symmetry
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 1    A         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 1    A         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 0.74
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 1
+    pair_fraction_of_subchain: 1
+    subchains:
+      [[A,0]]
+    subchain_pairs:
+      []
+  -
+    id: solo-zone-no
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 0    B         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 0    B         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 0.76
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 1
+    pair_fraction_of_subchain: 1
+    subchains:
+      []
+    subchain_pairs:
+      []
+  -
+    id: solo-zone-no-symmetry
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 1    A         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 1    A         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 0.76
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 1
+    pair_fraction_of_subchain: 1
+    subchains:
+      []
+    subchain_pairs:
+      []
+  -
+    id: solo-subchain-yes
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 0    B         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 0    B         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 1
+    solo_fraction_of_subchain: 0.59
+    pair_fraction_of_zone: 1
+    pair_fraction_of_subchain: 1
+    subchains:
+      [[A,0]]
+    subchain_pairs:
+      []
+  -
+    id: solo-subchain-no
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 0    B         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 0    B         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 1
+    solo_fraction_of_subchain: 0.61
+    pair_fraction_of_zone: 1
+    pair_fraction_of_subchain: 1
+    subchains:
+      []
+    subchain_pairs:
+      []
+  -
+    id: pair-zone-yes
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 0    B         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 0    B         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 1
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 0.24
+    pair_fraction_of_subchain: 1
+    subchains:
+      []
+    subchain_pairs:
+      [[[A, 0], [B, 0]]]
+  -
+    id: pair-zone-yes-symmetry
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 1    A         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 1    A         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 1
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 0.24
+    pair_fraction_of_subchain: 1
+    subchains:
+      []
+    subchain_pairs:
+      [[[A, 0], [A, 1]]]
+  -
+    id: pair-zone-no
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 0    B         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 0    B         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 1
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 0.26
+    pair_fraction_of_subchain: 1
+    subchains:
+      []
+    subchain_pairs:
+      []
+  -
+    id: pair-zone-no-symmetry
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 1    A         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 1    A         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 1
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 0.26
+    pair_fraction_of_subchain: 1
+    subchains:
+      []
+    subchain_pairs:
+      []
+  -
+    id: pair-subchain-yes
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 0    B         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 0    B         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 1
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 1
+    pair_fraction_of_subchain: 0.49
+    subchains:
+      []
+    subchain_pairs:
+      [[[A, 0], [B, 0]]]
+  -
+    id: pair-subchain-no
+    atoms:
+      > sym  subchain  x  y  z occ
+      > 0    A         0  0  0 1
+      > 0    A         1  0  0 1
+      > 0    A         0  1  0 1
+      > 0    B         0  0  1 1
+      > 0    A         2  0  0 1
+      > 0    A         0  2  0 1
+      > 0    B         0  0  2 1
+    center_A: 0 0 0
+    radius_A: 1.5
+    solo_fraction_of_zone: 1
+    solo_fraction_of_subchain: 1
+    pair_fraction_of_zone: 1
+    pair_fraction_of_subchain: 0.51
+    subchains:
+      []
+    subchain_pairs:
+      []
+
+  # For the following tests, unlike for the previous tests, I didn't choose 
+  # thresholds to be right on the edge on counting a subchain/subchain pair.  
+  # Instead, I chose them to be reasonable, i.e. similar to what I plan to use 
+  # for my real dataset.
+  -
+    id: 171l-solo
+    # This zone is centered at the center of the protein.  171l only has one 
+    # subchain, so this is a bit of a trivial case.
+    atoms: 171l.cif.gz
+    # PyMOL> centerofmass all
+    center_A: 7.650 46.227 6.105
+    radius_A: 8
+    solo_fraction_of_zone: 0.75
+    solo_fraction_of_subchain: 0.75
+    pair_fraction_of_zone: 0.25
+    pair_fraction_of_subchain: 0.75
+    subchains:
+      [[A, 0]]
+    subchain_pairs:
+      []
+  -
+    id: 1qjg-monomer
+    # This zone is centered a good distance away from the ligand binding site 
+    # and the dimer interface.  It contains a single ligand atom, but that 
+    # should not be enough to count as a "pair".  
+    atoms: 1qjg_clean.cif
+    # PyMOL> select B/30/CZ
+    center_A: -11.932 63.672 -17.507
+    radius_A: 8
+    solo_fraction_of_zone: 0.75
+    solo_fraction_of_subchain: 0.75
+    pair_fraction_of_zone: 0.25
+    pair_fraction_of_subchain: 0.75
+    subchains:
+      [[B, 0]]
+    subchain_pairs:
+      []
+  -
+    id: 1qjg-dimer
+    # This zone is centered at the dimer interface.  It should include enough 
+    # atoms from both monomers to be counted as a "pair" interaction, but not 
+    # enough from either to count as a "solo" interaction.
+    atoms: 1qjg_clean.cif
+    # PyMOL> select B/98/CD1
+    center_A: -1.848 72.079 -28.972
+    radius_A: 8
+    solo_fraction_of_zone: 0.75
+    solo_fraction_of_subchain: 0.75
+    pair_fraction_of_zone: 0.25
+    pair_fraction_of_subchain: 0.75
+    subchains:
+      []
+    subchain_pairs:
+      [[[A, 0], [B, 0]]]
+  -
+    id: 1qjg-ligand
+    # This zone is centered near the bottom of the ligand binding pocket.  It 
+    # includes most of the ligand atoms (17/20) and a substantial number of 
+    # protein atoms (88).  This should be enough to count both the protein and 
+    # the ligand as individual subchains, and also as a subchain pair.
+    atoms: 1qjg_clean.cif
+    # PyMOL> select B/EQU/C1
+    center_A: -12.040 70.507 -22.237
+    radius_A: 8
+    solo_fraction_of_zone: 0.75
+    solo_fraction_of_subchain: 0.75
+    pair_fraction_of_zone: 0.25
+    pair_fraction_of_subchain: 0.75
+    subchains:
+      [[B, 0], [H, 0]]
+    subchain_pairs:
+      [[[B, 0], [H, 0]]]
+  -
+    id: 3fy3-symmetry
+    # 3fy3 is a dimer, and this zone is centered at the dimer interface.  The 
+    # monomers are different symmetry mates of the same subchain, but should 
+    # still be considered a distinct pair.
+    atoms: 3fy3.cif.gz
+    center_A: 0 0 -7
+    radius_A: 8
+    solo_fraction_of_zone: 0.75
+    solo_fraction_of_subchain: 0.75
+    pair_fraction_of_zone: 0.25
+    pair_fraction_of_subchain: 0.75
+    subchains:
+      []
+    subchain_pairs:
+      [[[A, 0], [A, 1]]]
+
+test_check_elements:
+  -
+    id: empty
+    atoms:
+      > e  x  y  z
+      > C  0  0  0
+      > N  1  0  0
+      > U  0  1  0
+      > X  0  0  1
+    center_A: 0 0 0
+    radius_A: 1.5
+    whitelist:
+      []
+    expected: True
+  -
+    id: baseline-yes
+    atoms:
+      > e  x  y  z
+      > C  0  0  0
+      > C  1  0  0
+      > C  0  1  0
+      > C  0  0  1
+    center_A: 0 0 0
+    radius_A: 1.5
+    whitelist:
+      - C
+    expected: True
+  -
+    id: baseline-no
+    atoms:
+      > e  x  y  z
+      > C  0  0  0
+      > C  1  0  0
+      > C  0  1  0
+      > N  0  0  1
+    center_A: 0 0 0
+    radius_A: 1.5
+    whitelist:
+      - C
+    expected: False
+  -
+    id: mixed-case-yes
+    atoms:
+      > e  x  y  z
+      > SE  0  0  0
+      > Se  1  0  0
+    center_A: 0 0 0
+    radius_A: 1.5
+    whitelist:
+      - SE
+    expected: True
+  -
+    id: mixed-case-yes
+    atoms:
+      > e  x  y  z
+      > SE  0  0  0
+      > SE  1  0  0
+    center_A: 0 0 0
+    radius_A: 1.5
+    whitelist:
+      - Se
+    expected: True
+  -
+    id: 1gxz-no
+    # This is hemoglobin, so it contains iron atoms.
+    atoms: 1gzx.cif.gz
+    # B/289/CA
+    center_A: -36.980 34.981 -16.148
+    radius_A: 15
+    whitelist:
+      [C, N, O, S]
+    expected: False
+  -
+    id: 1gxz-no
+    atoms: 1gzx.cif.gz
+    # B//FE
+    center_A: -34.525 28.926 0.010
+    radius_A: 15
+    whitelist:
+      [C, N, O, S]
+    expected: False
+
+test_find_zone_neighbors:
+  -
+    atoms:
+      > x y z occ
+      > 0 0 0 1
+      > 2 0 0 1
+    centers_A:
+      > 0 0 0
+    radius_A: 1.5
+    min_density_atoms_nm3: 50
+    expected:
+      [0]
+  -
+    atoms:
+      > x y z occ
+      > 0 0 0 1
+      > 2 0 0 1
+    centers_A:
+      > 0 0 0
+    radius_A: 1.5
+    min_density_atoms_nm3: 100
+    expected:
+      []
+  -
+    atoms:
+      > x y z occ
+      > 0 0 0 1
+      > 2 0 0 1
+      > 4 0 0 1
+    centers_A:
+      > 0 0 0
+      > 4 0 0
+    radius_A: 1.5
+    min_density_atoms_nm3: 50
+    expected:
+      [0, 1]
+  -
+    atoms:
+      > x y z occ
+      > 0 0 0 1
+      > 0 1 0 1
+      > 2 0 0 1
+      > 4 0 0 1
+    centers_A:
+      > 0 0 0
+      > 4 0 0
+    radius_A: 1.5
+    min_density_atoms_nm3: 100
+    expected:
+      [0]
+  -
+    atoms: 171l.cif.gz
+    # A/162/CA: 226 atoms
+    # A/99/CA:  649 atoms
+    # A/81/CA:  267 atoms
+    centers_A:
+      > 13.229 61.729  7.969
+      >  9.521 50.177 13.267
+      >  8.356 33.213 18.458
+    radius_A: 15
+    min_density_atoms_nm3: 40
+    expected:
+      [1]
+
+test_calc_zone_centers_A:
+  -
+    id: axis-aligned
+    atoms:
+      >  x  y  z
+      >  4  0  0
+      > -4  0  0
+      >  0  2  0
+      >  0 -2  0
+      >  0  0  1
+      >  0  0 -1
+    spacing_A: 2
+    expected:
+      >  4  2  0
+      >  4  0  0
+      >  4 -2  0
+      >  2  2  0
+      >  2  0  0
+      >  2 -2  0
+      >  0  2  0
+      >  0  0  0
+      >  0 -2  0
+      > -2  2  0
+      > -2  0  0
+      > -2 -2  0
+      > -4  2  0
+      > -4  0  0
+      > -4 -2  0
+
+test_load_config_err:
+  -
+    id: missing-keys
+    tmp_files:
+      mmc_pdb.duckdb: version 1
+      nonbio_residues:
+        > GOL
+        > PEG
+    config:
+      density_check_radius_A: 15
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 0.75
+      subchain_check_fraction_of_subchain: 0.75
+      subchain_pair_check_fraction_of_zone: 0.25
+      subchain_pair_check_fraction_of_subchain: 0.75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1
+      allowed_elements:
+        [C, N, O, S, SE, P]
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+    error:
+      type: ValueError
+      message: 'zone_size_A' not specified
+  -
+    id: extra-keys
+    tmp_files:
+      mmc_pdb.duckdb: version 1
+      nonbio_residues:
+        > GOL
+        > PEG
+    config:
+      zone_size_A: 10
+      density_check_radius_A: 15
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 0.75
+      subchain_check_fraction_of_subchain: 0.75
+      subchain_pair_check_fraction_of_zone: 0.25
+      subchain_pair_check_fraction_of_subchain: 0.75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1
+      allowed_elements:
+        [C, N, O, S, SE, P]
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+      unexpected_key: 42
+    error:
+      type: ValueError
+      message: the following keys aren't recognized: {'unexpected_key'}
+  -
+    id: quantity
+    tmp_files:
+      mmc_pdb.duckdb: version 1
+      nonbio_residues:
+        > GOL
+        > PEG
+    config:
+      zone_size_A: 10
+      density_check_radius_A: XX
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 0.75
+      subchain_check_fraction_of_subchain: 0.75
+      subchain_pair_check_fraction_of_zone: 0.25
+      subchain_pair_check_fraction_of_subchain: 0.75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1
+      allowed_elements:
+        [C, N, O, S, SE, P]
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+    error:
+      type: ValueError
+      message: 'density_check_radius_A' must be a number, not 'XX'
+  -
+    id: integer
+    tmp_files:
+      mmc_pdb.duckdb: version 1
+      nonbio_residues:
+        > GOL
+        > PEG
+    config:
+      zone_size_A: 10
+      density_check_radius_A: 15
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 0.75
+      subchain_check_fraction_of_subchain: 0.75
+      subchain_pair_check_fraction_of_zone: 0.25
+      subchain_pair_check_fraction_of_subchain: 0.75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1.5
+      allowed_elements:
+        [C, N, O, S, SE, P]
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+    error:
+      type: ValueError
+      message: 'neighbor_count_threshold' must be an integer, not '1.5'
+  -
+    id: fraction
+    tmp_files:
+      mmc_pdb.duckdb: version 1
+      nonbio_residues:
+        > GOL
+        > PEG
+    config:
+      zone_size_A: 10
+      density_check_radius_A: 15
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 75
+      subchain_check_fraction_of_subchain: 75
+      subchain_pair_check_fraction_of_zone: 25
+      subchain_pair_check_fraction_of_subchain: 75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1
+      allowed_elements:
+        [C, N, O, S, SE, P]
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+    error:
+      type: ValueError
+      message: 'subchain_check_fraction_of_zone' must be between 0 and 1, not 75
+  -
+    id: elements
+    tmp_files:
+      mmc_pdb.duckdb: version 1
+      nonbio_residues:
+        > GOL
+        > PEG
+    config:
+      zone_size_A: 10
+      density_check_radius_A: 15
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 0.75
+      subchain_check_fraction_of_subchain: 0.75
+      subchain_pair_check_fraction_of_zone: 0.25
+      subchain_pair_check_fraction_of_subchain: 0.75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1
+      allowed_elements: C
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+    error:
+      type: ValueError
+      message: 'allowed_elements' must be a list of elements, not 'C'
+  -
+    id: elements
+    tmp_files:
+      mmc_pdb.duckdb: version 1
+      nonbio_residues:
+        > GOL
+        > PEG
+    config:
+      zone_size_A: 10
+      density_check_radius_A: 15
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 0.75
+      subchain_check_fraction_of_subchain: 0.75
+      subchain_pair_check_fraction_of_zone: 0.25
+      subchain_pair_check_fraction_of_subchain: 0.75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1
+      allowed_elements:
+        [C, N, OO, S, SE, P]
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+    error:
+      type: ValueError
+      message: 'allowed_elements' must be a list of elements, not {'OO'}
+  -
+    id: diff-from-db
+    tmp_files:
+      pre_mmc_pdb.duckdb: version 1
+      mmc_pdb.duckdb: version 2
+      nonbio_residues:
+        > GOL
+        > PEG
+    pre_config:
+      zone_size_A: 10
+      density_check_radius_A: 15
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 0.75
+      subchain_check_fraction_of_subchain: 0.75
+      subchain_pair_check_fraction_of_zone: 0.25
+      subchain_pair_check_fraction_of_subchain: 0.75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1
+      allowed_elements:
+        [C, N, O, S, SE, P]
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+    config:
+      zone_size_A: 10
+      density_check_radius_A: 15
+      density_check_voxel_size_A: 2
+      density_check_min_atoms_nm3: 40
+      density_check_max_atoms_nm3: 70
+      subchain_check_radius_A: 8
+      subchain_check_fraction_of_zone: 0.75
+      subchain_check_fraction_of_subchain: 0.75
+      subchain_pair_check_fraction_of_zone: 0.25
+      subchain_pair_check_fraction_of_subchain: 0.75
+      neighbor_geometry: icosahedron faces
+      neighbor_distance_A: 30
+      neighbor_count_threshold: 1
+      allowed_elements:
+        [C, N, O, S, SE, P]
+      nonbiological_residues: nonbio_residues
+      atom_inclusion_radius_A: 76
+      atom_inclusion_boundary_depth_A: 3
+    error:
+      type: ValueError
+      message: the following parameters have changed since the last run: ['census_md5']

@@ -1,0 +1,98 @@
+test_density_manual:
+  -
+    id: empty
+    atoms:
+      > x   y z occ
+    radius_A: 1.5
+    voxel_size_A: 1
+    coords_A:
+      > -1.0 0 0
+      >  0.0 0 0
+      >  1.0 0 0
+    expected_atoms_nm3:
+      > 0.0
+      > 0.0
+      > 0.0
+    allowed_err_atoms_nm3: 1e-6
+  -
+    atoms:
+      > x   y z occ
+      > 0.5 0 0 1
+      > 1.5 0 0 1
+      > 2.5 0 0 1
+      > 3.5 0 0 1
+    radius_A: 1.5
+    voxel_size_A: 1
+    coords_A:
+      > -1.5 0 0
+      > -1.0 0 0
+      > -0.5 0 0
+      >  0.0 0 0
+      >  0.5 0 0
+      >  1.0 0 0
+      >  1.5 0 0
+      >  2.0 0 0
+      >  2.5 0 0
+      >  3.0 0 0
+      >  3.5 0 0
+      >  4.0 0 0
+      >  4.5 0 0
+      >  5.0 0 0
+      >  5.5 0 0
+    expected_atoms_nm3:
+      # I didn't calculate these expected values by hand, because they rely on 
+      # sphere/cube overlaps, and those can't be calculated by hand.  However, 
+      # I did work out that the desnity should increase in roughly equal-size 
+      # steps, then plateau at a maximum value for 3 steps, then decrease in a 
+      # symmetric fashion.  The points with the greatest density should contain 
+      # just less than 3 atoms.  Given that a sphere with a radius of 1.5Å has 
+      # a volume of ≈0.0141 nm³, the greatest densities should be just less 
+      # than  212 atoms/nm³.  They're actually 135 atoms/nm³.  I don't know if 
+      # this is right, but it seems plausible.
+      #
+      # Note that the -1 and +5 densities should be >0, because the spheres in 
+      # those cases do overlap slightly with the data.  But the interpolation 
+      # algorithm automatically assigns 0 to any values otside the domain of 
+      # the input, no matter how close to the domain they are.  This is a 
+      # little suboptimal---I'd rather the interpolation algorithm assumed an 
+      # infinite grid of 0 values---but in practice is doesn't matter.  These 
+      # densities will always be very close to zero, and we only need accuracy 
+      # for densities near the threshold.
+      > 0.0
+      > 0.0
+      > 37.70675929263233
+      > 67.72164395079015
+      > 97.73652860894796
+      > 116.58990825526413
+      > 135.44328790158028
+      > 135.4432879015803
+      > 135.44328790158028
+      > 116.58990825526413
+      > 97.73652860894796
+      > 67.72164395079015
+      > 37.70675929263233
+      > 0.0
+      > 0.0
+    allowed_err_atoms_nm3: 1e-6
+  -
+    atoms: 171l.cif.gz
+    radius_A: 15
+    voxel_size_A: 2
+    coords_A:
+      # PyMOL> select 1/CA
+      > 15.898 37.033 15.918
+      # PyMOL> select 71/CA
+      > 15.641 46.472 3.989
+      # PyMOL> select 26/CA
+      > 5.298 41.017 -5.695
+      # PyMOL> select 102/CA
+      > 6.394 49.242 9.187
+    expected_atoms_nm3:
+      > 17.96682468681841
+      > 29.49671611969794
+      > 32.67981498153585
+      > 43.78529323283699
+    # See expt #55.  With 2Å voxels, the error was usually below 0.5 atoms/nm³, 
+    # and almost always below 2 atoms/nm³.
+    allowed_err_atoms_nm3: 2
+
