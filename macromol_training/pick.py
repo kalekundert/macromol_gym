@@ -171,6 +171,15 @@ def pick_training_zones(
             )
             self.kd_tree = kd_tree = make_kd_tree(atoms)
 
+            # These two structures have millions of atoms, and biological 
+            # assemblies that leave a large amount of space between each 
+            # asymmetric unit.  Together, these issues cause the density 
+            # estimator to use an extreme amount of memory.  Because I think 
+            # the empty space is a sign that these structures are erroneous, I 
+            # decided to exclude these structures from the dataset.
+            if self.structure.pdb_id in ['8h2i', '5zz8']:
+                return
+
             if not check_elements(atoms, config.allowed_elements):
                 return
 
@@ -180,7 +189,10 @@ def pick_training_zones(
                         config.nonbiological_residues,
                     ),
                     config.density_check_radius_A,
-                    config.density_check_voxel_size_A,
+                    config.density_check_voxel_size_A
+
+                    # Hard-coded hack to handle massive structures.
+                    if self.atoms.height < 1e7 else 5
             )
 
             # If any part of the structure exceeds the density threshold, take 
@@ -389,13 +401,13 @@ def calc_zone_centers_A(atoms: Atoms, spacing_A: float):
     return zones_p @ frame_ip
 
 def find_zone_neighbors(
-        density_calculator,
+        calc_density_atoms_nm3,
         *,
         center_A: Coord,
         offsets_A: Coords3,
         min_density_atoms_nm3: float,
 ):
-    atoms_nm3 = density_calculator(center_A + offsets_A)
+    atoms_nm3 = calc_density_atoms_nm3(center_A + offsets_A)
     indices = np.arange(len(offsets_A))[atoms_nm3 > min_density_atoms_nm3]
     return list(indices)
 
@@ -469,7 +481,11 @@ def prune_nonbiological_residues(
         atoms: Atoms,
         blacklist: list[str],
 ):
-    return atoms.filter(~pl.col('comp_id').is_in(blacklist))
+    non_bio = (
+            pl.col('comp_id').is_in(blacklist)
+            & ~pl.col('is_polymer')
+    )
+    return atoms.filter(~non_bio)
 
 def prune_distant_atoms(
         atoms: Atoms,

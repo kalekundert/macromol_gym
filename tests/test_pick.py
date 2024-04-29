@@ -26,6 +26,7 @@ def atoms(params):
             params,
             exprs={
                 'oob': pl.col('out_of_bounds') == '1',
+                'is_polymer': pl.col('is_polymer') == '1',
             },
             dtypes={
                 'sym': int,
@@ -35,6 +36,7 @@ def atoms(params):
                 'z': float,
                 'occ': float,
                 'oob': bool,
+                'is_polymer': bool,
             },
             col_aliases={
                 'sym': 'symmetry_mate',

@@ -1,25 +1,49 @@
 test_prune_nonbiological_residues:
   -
-    id: baseline
+    id: baseline-peptide
     atoms:
-      > resn resi
-      > MET  1
-      > GLY  2
-      > THR  3
-      > GLN  4
-      > LYS  5
-      > VAL  6
-      > GLC  7
+      > resn resi is_polymer
+      > MET  1    1
+      > GLY  2    1
+      > THR  3    1
+      > GLN  4    1
+      > LYS  5    1
+      > VAL  6    1
+      > GLC  7    0
     blacklist:
       - GLC
     expected:
-      > resn resi
-      > MET  1
-      > GLY  2
-      > THR  3
-      > GLN  4
-      > LYS  5
-      > VAL  6
+      > resn resi is_polymer
+      > MET  1    1
+      > GLY  2    1
+      > THR  3    1
+      > GLN  4    1
+      > LYS  5    1
+      > VAL  6    1
+  -
+    id: baseline-atp
+    atoms:
+      > resn is_polymer
+      > ATP  0
+      > GLC  0
+    blacklist:
+      - GLC
+    expected:
+      > resn is_polymer
+      > ATP  0
+  -
+    id: polymer
+    atoms:
+      > resn resi is_polymer
+      > GLY  1    1
+      > GLY  2    0
+      > GLY  3    1
+    blacklist:
+      - GLY
+    expected:
+      > resn resi is_polymer
+      > GLY  1    1
+      > GLY  3    1
 
 test_prune_distant_atoms:
   -
