@@ -2,7 +2,7 @@
 Cluster PDB ids based on the InterPro domains and families they contain.
 
 Usage:
-    mmt_fetch_interpro_clusters <census> [-o <csv>] [-c <sqlite>] [-r <int>]
+    mmt_fetch_interpro_clusters <db> [-o <csv>] [-c <sqlite>] [-r <int>]
 
 Options:
     -o --output <csv>           [default: interpro_clusters.csv]
@@ -33,9 +33,9 @@ import asyncio
 import sqlite3
 import polars as pl
 
-from .database_io import _dict_row_factory, _scalar_row_factory
-from macromol_census import (
-        open_db as open_census_db, select_nonredundant_pdb_ids,
+from .database_io import (
+        open_db as open_train_db, select_structures,
+        _dict_row_factory, _scalar_row_factory,
 )
 from more_itertools import one
 from tqdm import tqdm
@@ -44,9 +44,9 @@ def main():
     import docopt
     args = docopt.docopt(__doc__)
 
-    census_db = open_census_db(args['<census>'])
+    train_db = open_train_db(args['<db>'])
     cache_db = open_cache_db(args['--cache'])
-    pdb_ids = find_pdb_ids_to_fetch(census_db, cache_db)
+    pdb_ids = find_pdb_ids_to_fetch(train_db, cache_db)
 
     if pdb_ids:
         # I experimented with different numbers of simultaneous connections.  
@@ -73,8 +73,8 @@ def main():
     df = make_clusters(cache_db)
     df.write_csv(args['--output'], include_header=False)
 
-def find_pdb_ids_to_fetch(census_db, cache_db):
-    return select_census_pdb_ids(census_db) - select_cached_pdb_ids(cache_db)
+def find_pdb_ids_to_fetch(train_db, cache_db):
+    return select_needed_pdb_ids(train_db) - select_cached_pdb_ids(cache_db)
 
 async def cache_interpro_entries(db, pdb_ids, *, max_simultaneous_requests):
     semaphore = asyncio.Semaphore(max_simultaneous_requests)
@@ -113,7 +113,7 @@ async def cache_interpro_entries(db, pdb_ids, *, max_simultaneous_requests):
 async def fetch_interpro_entries_in_structure(session, pdb_id):
     # In most cases it doesn't matter if the PDB id is upper or lower case.  
     # However, "1set" and "7set" both return errors while "1SET" and "7SET" 
-    # don't.
+    # don't.  Given this, always use upper case.
     url = f'https://www.ebi.ac.uk/interpro/api/entry/interpro/structure/pdb/{pdb_id.upper()}'
 
     async with session.get(url) as response:
@@ -194,15 +194,11 @@ def open_cache_db(path):
     ''')
     return db
 
-def select_census_pdb_ids(db):
-    df = select_nonredundant_pdb_ids(db)
-    return set(df['pdb_id'])
+def select_needed_pdb_ids(db):
+    return set(select_structures(db))
 
 def select_cached_pdb_ids(db):
-    cur = db.execute('''\
-            SELECT pdb_id
-            FROM header
-    ''')
+    cur = db.execute('SELECT pdb_id FROM header')
     cur.row_factory = _scalar_row_factory
     return set(cur.fetchall())
 

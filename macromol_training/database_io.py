@@ -143,12 +143,9 @@ def insert_structure(db, pdb_id, *, model_id):
     return one(cur.fetchall())
 
 def update_splits(db, splits):
-    cur = db.execute('SELECT pdb_id FROM structure')
-    cur.row_factory = _scalar_row_factory
-    structs = cur.fetchall()
+    assert set(splits.keys()) == set(select_structures(db))
 
-    assert set(splits.keys()) == set(structs)
-
+    db.execute('DELETE FROM split')
     db.executemany(
             'INSERT INTO split (name) VALUES (?)',
             [(x,) for x in unique(splits.values())],
@@ -259,6 +256,26 @@ def select_split(db, split):
     ''', [split])
     cur.row_factory = _scalar_row_factory
     return np.array(cur.fetchall())
+
+def select_zone_ids(db):
+    cur = db.execute('SELECT zone.id FROM zone')
+    cur.row_factory = _scalar_row_factory
+    return cur.fetchall()
+
+def select_zone_pdb_ids(db, zone_id):
+    cur = db.execute('''\
+            SELECT 
+                structure.pdb_id AS struct_pdb_id,
+                structure.model_id AS model_pdb_id,
+                assembly.pdb_id AS assembly_pdb_id,
+                zone.center_A AS zone_center_A
+            FROM zone
+            JOIN assembly ON assembly.id = zone.assembly_id
+            JOIN structure ON structure.id = assembly.struct_id
+            WHERE zone.id=?
+        ''', [zone_id])
+    cur.row_factory = _dict_row_factory
+    return cur.fetchone()
 
 def select_zone_atoms(db, zone_id):
     return db.execute('''\

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from pytest import approx
+from pytest_unordered import unordered
 
 def test_metadata():
     db = mmt.open_db(':memory:')
@@ -53,14 +54,14 @@ def test_zone():
         assembly_ids = [
                 mmt.insert_assembly(
                     db, struct_ids[0],
-                    pdb_id='1',
+                    pdb_id='2',
                     atoms=pl.DataFrame([
                         dict(element='C'),
                     ]),
                 ),
                 mmt.insert_assembly(
                     db, struct_ids[1],
-                    pdb_id='1',
+                    pdb_id='3',
                     atoms=pl.DataFrame([
                         dict(element='N'),
                     ]),
@@ -83,25 +84,41 @@ def test_zone():
                 ),
         ]
 
+    assert mmt.select_zone_ids(db) == unordered(zone_ids)
+
     center_A, atoms = mmt.select_zone_atoms(db, zone_ids[0])
     subchains, subchain_pairs = mmt.select_zone_subchains(db, zone_ids[0])
     neighbor_ids = mmt.select_zone_neighbors(db, zone_ids[0])
+    pdb_ids = mmt.select_zone_pdb_ids(db, zone_ids[0])
 
     assert center_A == approx([1, 2, 3])
     assert atoms.to_dicts() == [dict(element='C')]
     assert subchains == [('A', 0)]
     assert subchain_pairs == []
     assert neighbor_ids == [1,3,5]
+    assert pdb_ids == {
+            'struct_pdb_id': '1abc',
+            'model_pdb_id': '1',
+            'assembly_pdb_id': '2',
+            'zone_center_A': approx([1, 2, 3]),
+    }
     
     center_A, atoms = mmt.select_zone_atoms(db, zone_ids[1])
     subchains, subchain_pairs = mmt.select_zone_subchains(db, zone_ids[1])
     neighbor_ids = mmt.select_zone_neighbors(db, zone_ids[1])
+    pdb_ids = mmt.select_zone_pdb_ids(db, zone_ids[1])
 
     assert center_A == approx([4, 5, 6])
     assert atoms.to_dicts() == [dict(element='N')]
     assert subchains == []
     assert subchain_pairs == [(('A', 0), ('B', 0))]
     assert neighbor_ids == [1]
+    assert pdb_ids == {
+            'struct_pdb_id': '2abc',
+            'model_pdb_id': '1',
+            'assembly_pdb_id': '3',
+            'zone_center_A': approx([4, 5, 6]),
+    }
 
 def test_splits():
     db = mmt.open_db(':memory:')
