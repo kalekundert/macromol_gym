@@ -409,7 +409,7 @@ def find_zone_neighbors(
 ):
     atoms_nm3 = calc_density_atoms_nm3(center_A + offsets_A)
     indices = np.arange(len(offsets_A))[atoms_nm3 > min_density_atoms_nm3]
-    return list(indices)
+    return indices.tolist()
 
 def find_zone_subchains(
         atoms: Atoms,

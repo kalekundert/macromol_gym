@@ -4,9 +4,7 @@ import numpy as np
 import json
 import io
 
-from more_itertools import (
-        one, flatten, zip_broadcast, unique_everseen as unique,
-)
+from more_itertools import one, flatten, unique_everseen as unique
 from textwrap import dedent
 from typing import Any
 
@@ -217,7 +215,7 @@ def insert_zone(
             INSERT INTO zone_neighbor (zone_id, neighbor_id)
             VALUES (?, ?)
             ''',
-            zip_broadcast(zone_id, neighbor_ids),
+            [(zone_id, neighbor_id) for neighbor_id in neighbor_ids],
     )
     return zone_id
 

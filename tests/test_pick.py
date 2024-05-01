@@ -189,6 +189,11 @@ def test_find_zone_neighbors(atoms, centers_A, radius_A, min_density_atoms_nm3, 
     )
     assert actual == expected
 
+    # This function uses numpy under the hood, so it's possible that it would 
+    # return numpy integers.  However, these are not understood to be integers 
+    # by SQLite, which causes problems down the road.
+    assert all(type(x) is int for x in actual)
+
 @pff.parametrize(
         schema=pff.cast(
             atoms=atoms,
