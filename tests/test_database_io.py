@@ -86,7 +86,8 @@ def test_zone():
 
     assert mmt.select_zone_ids(db) == unordered(zone_ids)
 
-    center_A, atoms = mmt.select_zone_atoms(db, zone_ids[0])
+    center_A = mmt.select_zone_center_A(db, zone_ids[0])
+    atoms = mmt.select_zone_atoms(db, zone_ids[0])
     subchains, subchain_pairs = mmt.select_zone_subchains(db, zone_ids[0])
     neighbor_ids = mmt.select_zone_neighbors(db, zone_ids[0])
     pdb_ids = mmt.select_zone_pdb_ids(db, zone_ids[0])
@@ -100,10 +101,10 @@ def test_zone():
             'struct_pdb_id': '1abc',
             'model_pdb_id': '1',
             'assembly_pdb_id': '2',
-            'zone_center_A': approx([1, 2, 3]),
     }
     
-    center_A, atoms = mmt.select_zone_atoms(db, zone_ids[1])
+    center_A = mmt.select_zone_center_A(db, zone_ids[1])
+    atoms = mmt.select_zone_atoms(db, zone_ids[1])
     subchains, subchain_pairs = mmt.select_zone_subchains(db, zone_ids[1])
     neighbor_ids = mmt.select_zone_neighbors(db, zone_ids[1])
     pdb_ids = mmt.select_zone_pdb_ids(db, zone_ids[1])
@@ -117,7 +118,6 @@ def test_zone():
             'struct_pdb_id': '2abc',
             'model_pdb_id': '1',
             'assembly_pdb_id': '3',
-            'zone_center_A': approx([4, 5, 6]),
     }
 
 def test_splits():

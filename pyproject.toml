@@ -26,8 +26,10 @@ dependencies = [
   'numpy',
   'periodictable',
   'pipeline_func',
-  'scipy',
+  'reprfunc',
   'scikit-learn',
+  'scipy',
+  'torch',
   'tqdm',
 ]
 
@@ -37,6 +39,7 @@ test = [
   'parametrize_from_file',
   'pytest_unordered',
   'pytest_tmp_files',
+  'hypothesis',
 ]
 doc = [
   'sphinx',
@@ -65,7 +68,7 @@ ignore = ["F405", "F403"]
 "__init__.py" = ["F401", "F821"]
 
 [tool.pytest.ini_options]
-addopts = "--doctest-modules --doctest-glob='*.rst'"
+addopts = "--ignore=macromol_training --doctest-modules --doctest-glob='*.rst'"
 doctest_optionflags = 'NORMALIZE_WHITESPACE'
 
 [tool.coverage.run]

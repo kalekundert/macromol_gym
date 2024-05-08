@@ -267,23 +267,29 @@ def select_zone_pdb_ids(db, zone_id):
             SELECT 
                 structure.pdb_id AS struct_pdb_id,
                 structure.model_id AS model_pdb_id,
-                assembly.pdb_id AS assembly_pdb_id,
-                zone.center_A AS zone_center_A
-            FROM zone
-            JOIN assembly ON assembly.id = zone.assembly_id
-            JOIN structure ON structure.id = assembly.struct_id
+                assembly.pdb_id AS assembly_pdb_id
+            FROM structure
+            JOIN assembly ON structure.id = assembly.struct_id
+            JOIN zone ON assembly.id = zone.assembly_id
             WHERE zone.id=?
         ''', [zone_id])
     cur.row_factory = _dict_row_factory
     return cur.fetchone()
 
+def select_zone_center_A(db, zone_id):
+    cur = db.execute('SELECT center_A FROM zone WHERE id=?', [zone_id])
+    cur.row_factory = _scalar_row_factory
+    return cur.fetchone()
+
 def select_zone_atoms(db, zone_id):
-    return db.execute('''\
-            SELECT zone.center_A, assembly.atoms
-            FROM zone
-            JOIN assembly ON assembly.id = zone.assembly_id
+    cur = db.execute('''\
+            SELECT assembly.atoms
+            FROM assembly
+            JOIN zone ON assembly.id = zone.assembly_id
             WHERE zone.id=?
-    ''', [zone_id]).fetchone()
+    ''', [zone_id])
+    cur.row_factory = _scalar_row_factory
+    return cur.fetchone()
 
 def select_zone_subchains(db, zone_id):
     cur = db.execute('''\
