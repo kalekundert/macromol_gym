@@ -1,4 +1,6 @@
 import torch
+import macromol_voxelize as mmvox
+import polars as pl
 import numpy as np
 
 from .database_io import (
@@ -17,23 +19,32 @@ from itertools import product
 from pathlib import Path
 from math import radians
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 from numpy.typing import NDArray
 
 @dataclass
-class NeighborConfig:
+class NeighborParams:
     direction_candidates: Coords
     distance_A: float
     noise_max_distance_A: float
     noise_max_angle_deg: float
 
+@dataclass
+class ImageParams:
+    grid: mmvox.Grid
+    atom_radius_A: Optional[float]
+    element_channels: list[str]
+    ligand_channel: bool
+
+
 class NeighborDataset(Dataset):
     
     def __init__(
             self,
+            *,
             db_path: Path,
             split: str,
-            config: NeighborConfig,
+            neighbor_params: NeighborParams,
             input_from_atoms: Callable[[Atoms], Any],
     ):
         # Don't store a connection to the database in the constructor.  This 
@@ -48,7 +59,7 @@ class NeighborDataset(Dataset):
         db = open_db(db_path)
         self.zone_ids = select_split(db, split)
 
-        self.config = config
+        self.neighbor_params = neighbor_params
         self.input_from_atoms = input_from_atoms
 
     def __len__(self):
@@ -61,7 +72,7 @@ class NeighborDataset(Dataset):
         zone_id, frame_ia, frame_ab, b = get_neighboring_frames(
                 self.db, i,
                 zone_ids=self.zone_ids,
-                config=self.config,
+                neighbor_params=self.neighbor_params,
                 db_cache=self.db_cache,
         )
 
@@ -74,6 +85,49 @@ class NeighborDataset(Dataset):
         input_ab = np.stack([input_a, input_b])
 
         return torch.from_numpy(input_ab).float(), torch.tensor(b)
+
+class CnnNeighborDataset(NeighborDataset):
+
+    def __init__(
+            self,
+            db_path: Path,
+            split: str,
+            neighbor_params: NeighborParams,
+            img_params: ImageParams,
+    ):
+        # This class is slightly opinionated about how images should be 
+        # created.  This allows it to provide a simple---but not fully 
+        # general---API for common image parameters.  If you need to do 
+        # something beyond the scope of this API, use `NeighborDataset` 
+        # directly.
+
+        def input_from_atoms(atoms):
+            atoms = mmvox.set_atom_radius_A(atoms, img_params.atom_radius_A)
+            mmvox_img_params = mmvox.ImageParams(
+                    channels=(
+                        len(img_params.element_channels)
+                        + img_params.ligand_channel
+                    ),
+                    grid=img_params.grid,
+                    assign_channels=assign_channels,
+            )
+            return mmvox.image_from_atoms(atoms, mmvox_img_params)
+
+        def assign_channels(atoms):
+            channels = img_params.element_channels
+            atoms = mmvox.set_atom_channels_by_element(atoms, channels)
+
+            if img_params.ligand_channel:
+                atoms = add_ligand_channel(atoms, len(channels))
+
+            return atoms
+
+        super().__init__(
+                db_path=db_path,
+                split=split,
+                neighbor_params=neighbor_params,
+                input_from_atoms=input_from_atoms,
+        )
 
 class InfiniteSampler:
     """
@@ -121,7 +175,17 @@ class InfiniteSampler:
 
     __repr__ = repr_from_init
 
-def get_neighboring_frames(db, i, zone_ids, config, db_cache):
+def add_ligand_channel(atoms, channel):
+    ligand_channel = (
+            pl.when(pl.col('is_polymer'))
+            .then([channel])
+            .otherwise([])
+    )
+    return atoms.with_columns(
+            channels=pl.col('channels').list.concat(ligand_channel)
+    )
+
+def get_neighboring_frames(db, i, zone_ids, neighbor_params, db_cache):
     # Nomenclature
     # ============
     # home:
@@ -138,7 +202,8 @@ def get_neighboring_frames(db, i, zone_ids, config, db_cache):
     # =================
     # i: The frame for any coordinates in the database, include zone centers 
     #    and atomic coordinates.  This function does not use the atomic 
-    #    coordinates itself, but it's assumed that the caller will.
+    #    coordinates itself, but it's assumed that the caller will.  Note that 
+    #    this frame has nothing to do with the index argument *i*.
     #
     # a: The frame where the home is located at the origin, and the neighbor is 
     #    offset in one of a small number of possible directions.  Because the 
@@ -153,8 +218,8 @@ def get_neighboring_frames(db, i, zone_ids, config, db_cache):
     #
     # c: A frame that has been randomly translated and rotated, by a small 
     #    amount, relative to "b".  This is the frame that will actually be used 
-    #    to generate the second region, and it's just meant to add a little 
-    #    noise and prevent the model from keying in on exact distances.
+    #    to generate the second region.  It's just meant to add a little noise 
+    #    and prevent the model from keying in on exact distances.
 
     # If *i* continues to increment between epochs, then we will sample 
     # different rotations/translations in each epoch.  Otherwise, we won't.
@@ -176,19 +241,19 @@ def get_neighboring_frames(db, i, zone_ids, config, db_cache):
             zone_neighbor_indices,
     )
 
-    neighbor_label = rng.integers(len(config.direction_candidates))
-    neighbor_direction_a = config.direction_candidates[neighbor_label]
+    neighbor_label = rng.integers(len(neighbor_params.direction_candidates))
+    neighbor_direction_a = neighbor_params.direction_candidates[neighbor_label]
 
     frame_ia, frame_ab = _make_neighboring_frames(
             home_origin_i,
-            config.distance_A,
+            neighbor_params.distance_A,
             neighbor_direction_i,
             neighbor_direction_a,
     )
     frame_bc = _sample_noise_frame(
             rng,
-            config.noise_max_distance_A,
-            config.noise_max_angle_deg,
+            neighbor_params.noise_max_distance_A,
+            neighbor_params.noise_max_angle_deg,
     )
     frame_ac = frame_bc @ frame_ab
 

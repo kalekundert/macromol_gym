@@ -11,7 +11,7 @@ from macromol_training.database_io import (
         open_db, select_zone_ids, select_zone_pdb_ids, select_zone_atoms, 
 )
 from macromol_training.dataset import (
-        NeighborConfig, get_neighboring_frames,
+        NeighborParams, get_neighboring_frames,
 )
 from macromol_training.geometry import cube_faces
 from macromol_voxelize import (
@@ -47,7 +47,7 @@ class TrainingExamples(Wizard):
 
         self.db = open_db(db_path)
         self.zone_ids = select_zone_ids(self.db)
-        self.neighbor_config = NeighborConfig(
+        self.neighbor_params = NeighborParams(
                 direction_candidates=cube_faces(),
                 distance_A=distance_A,
                 noise_max_distance_A=noise_max_distance_A,
@@ -82,9 +82,9 @@ class TrainingExamples(Wizard):
                 [2, "Next <C-Space>", 'cmd.get_wizard().next_training_example()'],
                 [2, "Previous", 'cmd.get_wizard().prev_training_example()'],
                 [2, "New random seed", 'cmd.get_wizard().new_random_seed()'],
-                [3, f"Distance: {self.neighbor_config.distance_A}A", 'distance_A'],
-                [3, f"Noise distance: {self.neighbor_config.noise_max_distance_A}A", 'noise_max_distance_A'],
-                [3, f"Noise angle: {self.neighbor_config.noise_max_angle_deg} deg", 'noise_max_angle_deg'],
+                [3, f"Distance: {self.neighbor_params.distance_A}A", 'distance_A'],
+                [3, f"Noise distance: {self.neighbor_params.noise_max_distance_A}A", 'noise_max_distance_A'],
+                [3, f"Noise angle: {self.neighbor_params.noise_max_angle_deg} deg", 'noise_max_angle_deg'],
                 [3, f"Show voxels: {'yes' if self.show_voxels else 'no'}", 'show_voxels'],
                 [2, "Done", 'cmd.set_wizard()'],
         ]
@@ -102,9 +102,9 @@ class TrainingExamples(Wizard):
                 ],
         }
 
-        curr_dist_A = self.neighbor_config.distance_A
-        curr_noise_max_dist_A = self.neighbor_config.noise_max_distance_A
-        curr_noise_max_angle_deg = self.neighbor_config.noise_max_angle_deg
+        curr_dist_A = self.neighbor_params.distance_A
+        curr_noise_max_dist_A = self.neighbor_params.noise_max_distance_A
+        curr_noise_max_angle_deg = self.neighbor_params.noise_max_angle_deg
 
         for d in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]:
             menus['distance_A'] += [[
@@ -151,15 +151,15 @@ class TrainingExamples(Wizard):
         self.redraw(keep_view=True)
 
     def set_neighbor_distance_A(self, value):
-        self.neighbor_config.distance_A = value
+        self.neighbor_params.distance_A = value
         self.redraw()
 
     def set_noise_distance_A(self, value):
-        self.neighbor_config.noise_max_distance_A = value
+        self.neighbor_params.noise_max_distance_A = value
         self.redraw()
 
     def set_noise_angle_deg(self, value):
-        self.neighbor_config.noise_max_angle_deg = value
+        self.neighbor_params.noise_max_angle_deg = value
         self.redraw()
 
     def set_show_voxels(self, value):
@@ -175,7 +175,7 @@ class TrainingExamples(Wizard):
                 self.db,
                 self.i,
                 self.zone_ids,
-                self.neighbor_config,
+                self.neighbor_params,
                 self.db_cache,
         )
         frame_ib = frame_ab @ frame_ia
@@ -274,7 +274,7 @@ class ManualClassifier(Wizard):
 
         self.db = open_db(db_path)
         self.zone_ids = select_zone_ids(self.db)
-        self.neighbor_config = config = NeighborConfig(
+        self.neighbor_params = params = NeighborParams(
                 direction_candidates=cube_faces(),
                 distance_A=neighbor_distance_A,
                 noise_max_distance_A=noise_max_distance_A,
@@ -284,9 +284,9 @@ class ManualClassifier(Wizard):
 
         self.frames_ac = [
                 make_coord_frame(u * neighbor_distance_A)
-                for u in config.direction_candidates
+                for u in params.direction_candidates
         ]
-        self.frame_names = get_frame_names(config.direction_candidates)
+        self.frame_names = get_frame_names(params.direction_candidates)
         self.frame_order = ['+X', '+Y', '+Z', '-X', '-Y', '-Z']
         self.grid = Grid(
                 length_voxels=view_size_A,
@@ -374,7 +374,7 @@ class ManualClassifier(Wizard):
                 self.db,
                 self.i,
                 self.zone_ids,
-                self.neighbor_config,
+                self.neighbor_params,
                 self.db_cache,
         )
         frame_ib = frame_ab @ frame_ia

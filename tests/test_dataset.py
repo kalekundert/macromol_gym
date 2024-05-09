@@ -30,6 +30,30 @@ def test_infinite_sampler(sampler, expected_len, expected_iter):
         sampler.set_epoch(i)
         assert list(sampler) == list(indices)
 
+def test_add_ligand_channel():
+    atoms = pl.DataFrame([
+        dict(channels=[],    is_polymer=False),
+        dict(channels=[0],   is_polymer=False),
+        dict(channels=[1],   is_polymer=False),
+        dict(channels=[0,1], is_polymer=False),
+        dict(channels=[],    is_polymer=True),
+        dict(channels=[0],   is_polymer=True),
+        dict(channels=[1],   is_polymer=True),
+        dict(channels=[0,1], is_polymer=True),
+    ])
+    atoms = mmt.add_ligand_channel(atoms, 2)
+
+    assert atoms.to_dicts() == [
+        dict(channels=[],    is_polymer=False),
+        dict(channels=[0],   is_polymer=False),
+        dict(channels=[1],   is_polymer=False),
+        dict(channels=[0,1], is_polymer=False),
+        dict(channels=[2],    is_polymer=True),
+        dict(channels=[0,2],   is_polymer=True),
+        dict(channels=[1,2],   is_polymer=True),
+        dict(channels=[0,1,2], is_polymer=True),
+    ]
+
 def test_get_neighboring_frames():
     # Sample random coordinate frames, but make sure in each case that the 
     # origin of the first frame has the expected spatial relationship to the 
@@ -73,7 +97,7 @@ def test_get_neighboring_frames():
                 neighbor_ids=[10, 11, 12, 13, 14],
             ),
     ]
-    config = mmt.NeighborConfig(
+    params = mmt.NeighborParams(
             direction_candidates=mmt.cube_faces(),
             distance_A=30,
             noise_max_distance_A=5,
@@ -85,7 +109,7 @@ def test_get_neighboring_frames():
         zone_id, frame_ia, frame_ab, b = mmt.get_neighboring_frames(
                 db, i,
                 zone_ids=zone_ids,
-                config=config,
+                neighbor_params=params,
                 db_cache=db_cache,
         )
         frame_ai = invert_coord_frame(frame_ia)
@@ -99,12 +123,12 @@ def test_get_neighboring_frames():
 
         # Make sure the second frame is in the right position relative to the 
         # first.
-        neighbor_direction_a = config.direction_candidates[b]
-        neighbor_ideal_origin_a = neighbor_direction_a * config.distance_A
+        neighbor_direction_a = params.direction_candidates[b]
+        neighbor_ideal_origin_a = neighbor_direction_a * params.distance_A
         neighbor_ideal_origin_i = frame_ai @ np.array([*neighbor_ideal_origin_a, 1])
         neighbor_actual_origin_i = frame_bi @ np.array([0, 0, 0, 1])
         d = neighbor_ideal_origin_i - neighbor_actual_origin_i
-        assert np.linalg.norm(d[:3]) <= config.noise_max_distance_A
+        assert np.linalg.norm(d[:3]) <= params.noise_max_distance_A
 
 def test_load_from_cache():
     num_calls = 0
