@@ -87,23 +87,31 @@ class InfiniteSampler:
     which may be infinite.
     """
 
-    # Add option to shuffle within epoch.
-
     def __init__(
             self,
             epoch_size: int,
             *,
             start_index: int = 0,
             curr_epoch: int = 0,
+            shuffle: bool = False,
+            rng_factory: Callable[[int], np.random.Generator] = np.random.default_rng,
     ):
         self.start_index = start_index
         self.epoch_size = epoch_size
         self.curr_epoch = curr_epoch
+        self.shuffle = shuffle
+        self.rng_factory = rng_factory
 
     def __iter__(self):
         n = self.epoch_size
         i = self.start_index + n * self.curr_epoch
-        yield from range(i, i+n)
+        indices = range(i, i+n)
+
+        if self.shuffle:
+            rng = self.rng_factory(self.curr_epoch)
+            indices = rng.permutation(indices)
+
+        yield from indices
 
     def __len__(self):
         return self.epoch_size

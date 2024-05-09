@@ -2,6 +2,7 @@ import macromol_training as mmt
 import macromol_training.dataset as _mmt
 import polars as pl
 import numpy as np
+import parametrize_from_file as pff
 
 from scipy.stats import ks_1samp
 from macromol_dataframe import transform_coords, invert_coord_frame
@@ -11,6 +12,23 @@ from hypothesis import given, example, assume
 from hypothesis.strategies import floats, just
 from hypothesis.extra.numpy import arrays
 from pytest import approx
+
+with_py = pff.Namespace()
+with_mmt = pff.Namespace('import macromol_training as mmt')
+
+@pff.parametrize(
+        schema=pff.cast(
+            sampler=with_mmt.eval,
+            expected_len=with_py.eval,
+            expected_iter=with_py.eval,
+        ),
+)
+def test_infinite_sampler(sampler, expected_len, expected_iter):
+    assert len(sampler) == expected_len
+
+    for i, indices in enumerate(expected_iter):
+        sampler.set_epoch(i)
+        assert list(sampler) == list(indices)
 
 def test_get_neighboring_frames():
     # Sample random coordinate frames, but make sure in each case that the 

@@ -1,0 +1,28 @@
+test_infinite_sampler:
+  -
+    id: baseline
+    sampler: mmt.InfiniteSampler(2)
+    expected_len: 2
+    expected_iter:
+      - 0, 1
+      - 2, 3
+  -
+    id: start-index
+    sampler: mmt.InfiniteSampler(2, start_index=1)
+    expected_len: 2
+    expected_iter:
+      - 1, 2
+      - 3, 4
+  -
+    id: shuffle
+    sampler: mmt.InfiniteSampler(5, shuffle=True)
+    expected_len: 5
+    # The order of these sequences is pseudo-random.  I got these expected 
+    # values by simply running the program once and seeing what it produced, 
+    # not by prdicting the output a priori.  Note that this test has a bigger 
+    # epoch size than the others.  The purpose of this is to avoid getting a 
+    # random sequence that happens to be the same as the input sequence.
+    expected_iter:
+      - 2, 4, 3, 0, 1
+      - 9, 5, 6, 7, 8
+
