@@ -38,7 +38,7 @@ def make_density_interpolator(atoms, radius_A, voxel_size_A):
     indices = voxels - min_voxel
 
     voxel_densities = np.zeros(max_voxel - min_voxel + 1)
-    voxel_densities[*indices.T] = group_densities['atoms_per_nm3']
+    voxel_densities[tuple(indices.T)] = group_densities['atoms_per_nm3']
 
     sphere_kernel = make_sphere_kernel(radius_A, voxel_size_A)
     sphere_densities = convolve(voxel_densities, sphere_kernel)

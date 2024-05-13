@@ -31,9 +31,10 @@ def open_db(path):
     sqlite3.register_adapter(pl.DataFrame, _adapt_dataframe)
     sqlite3.register_converter('ATOMS', _convert_dataframe)
 
+    # https://stackoverflow.com/questions/4699605/why-doesn-t-sqlite-require-a-commit-call-to-save-data
     db = sqlite3.connect(
             path,
-            autocommit=False,
+            isolation_level='DEFERRED',
             detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
     )
     db.execute('PRAGMA foreign_keys = ON')
