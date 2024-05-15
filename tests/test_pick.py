@@ -287,7 +287,7 @@ def test_pick_training_zones_1ypi_2ypi_3ypi():
     )
 
     # Finished setting up the census database, now we can pick the dataset:
-    train_db = mmt.open_db(':memory:')
+    train_db = mmt.open_db(':memory:', mode='rwc')
     mmt.init_db(train_db)
 
     config = mmt.Config(
@@ -374,7 +374,7 @@ def test_pick_training_zones_7spt_1c58():
     )
 
     # Finished setting up the census database, now we can pick the dataset:
-    train_db = mmt.open_db(':memory:')
+    train_db = mmt.open_db(':memory:', mode='rwc')
     mmt.init_db(train_db)
 
     config = mmt.Config(
@@ -449,7 +449,7 @@ def test_load_config(tmp_path, monkeypatch):
         'nonbio_residues': 'GOL\nPEG',
     })
 
-    db = mmt.open_db(':memory:')
+    db = mmt.open_db(':memory:', mode='rwc')
     mmt.init_db(db)
 
     params = dict(
@@ -526,7 +526,7 @@ def test_load_config(tmp_path, monkeypatch):
 def test_load_config_err(tmp_files, pre_config, config, error, monkeypatch):
     monkeypatch.chdir(tmp_files)
 
-    db = mmt.open_db(':memory:')
+    db = mmt.open_db(':memory:', mode='rwc')
     mmt.init_db(db)
 
     if pre_config:

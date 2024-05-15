@@ -44,7 +44,7 @@ def main():
     import docopt
     args = docopt.docopt(__doc__)
 
-    train_db = open_train_db(args['<db>'])
+    train_db = open_train_db(args['<db>'], mode='rw')
     cache_db = open_cache_db(args['--cache'])
     pdb_ids = find_pdb_ids_to_fetch(train_db, cache_db)
 

@@ -60,7 +60,7 @@ def test_get_neighboring_frames():
     # second frame.  This is just meant to catch huge errors; use the pymol 
     # plugins to evaluate the training examples more strictly.
 
-    db = mmt.open_db(':memory:')
+    db = mmt.open_db(':memory:', mode='rwc')
     mmt.init_db(db)
 
     zone_size_A = 10

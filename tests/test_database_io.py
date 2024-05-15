@@ -1,13 +1,21 @@
 import macromol_training as mmt
 import polars as pl
 import numpy as np
+import sqlite3
 import pytest
 
 from pytest import approx
 from pytest_unordered import unordered
 
+def test_read_only():
+    db = mmt.open_db(':memory:')  # read-only by default
+
+    with pytest.raises(sqlite3.OperationalError):
+        mmt.init_db(db)
+
+
 def test_metadata():
-    db = mmt.open_db(':memory:')
+    db = mmt.open_db(':memory:', mode='rwc')
     mmt.init_db(db)
 
     with db:
@@ -32,7 +40,7 @@ def test_metadata():
         mmt.select_metadatum(db, 'a')
 
 def test_zone():
-    db = mmt.open_db(':memory:')
+    db = mmt.open_db(':memory:', mode='rwc')
     mmt.init_db(db)
 
     with db:
@@ -121,7 +129,7 @@ def test_zone():
     }
 
 def test_splits():
-    db = mmt.open_db(':memory:')
+    db = mmt.open_db(':memory:', mode='rwc')
     mmt.init_db(db)
 
     with db:

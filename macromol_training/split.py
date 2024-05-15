@@ -29,7 +29,7 @@ def main():
 
     args = docopt(__doc__)
 
-    db = open_db(args['<db>'])
+    db = open_db(args['<db>'], mode='rw')
     rng = np.random.default_rng(int(args['--random-seed']))
     struct_zone_counts = select_struct_zone_counts(db)
     targets = load_split_targets(args['<splits>'])

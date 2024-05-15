@@ -5,10 +5,19 @@ import json
 import io
 
 from more_itertools import one, flatten, unique_everseen as unique
+from urllib.request import pathname2url
+from pathlib import Path
 from textwrap import dedent
-from typing import Any
 
-def open_db(path):
+from typing import Any, Literal
+
+# Note: functions that accept a `zone_id` and use it to make a query should 
+# always explicitly convert the ID to an integer.  If `numpy` was involved in 
+# generating the ID in question, it might actually be a `np.int64` rather than 
+# a plain integer.  This will be interpreted by SQLite as a blob, and as a 
+# result the query will mysteriously fail.
+
+def open_db(path: str | Path, mode: Literal['ro', 'rw', 'rwc'] = 'ro'):
     """
     .. warning::
         It's not safe to fork the database connection object returned by this 
@@ -31,9 +40,13 @@ def open_db(path):
     sqlite3.register_adapter(pl.DataFrame, _adapt_dataframe)
     sqlite3.register_converter('ATOMS', _convert_dataframe)
 
+    if isinstance(path, Path):
+        path = pathname2url(str(path))
+
     # https://stackoverflow.com/questions/4699605/why-doesn-t-sqlite-require-a-commit-call-to-save-data
     db = sqlite3.connect(
-            path,
+            f'file:{path}?mode={mode}',
+            uri=True,
             isolation_level='DEFERRED',
             detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
     )
@@ -273,14 +286,17 @@ def select_zone_pdb_ids(db, zone_id):
             JOIN assembly ON structure.id = assembly.struct_id
             JOIN zone ON assembly.id = zone.assembly_id
             WHERE zone.id=?
-        ''', [zone_id])
+        ''', [int(zone_id)])
     cur.row_factory = _dict_row_factory
-    return cur.fetchone()
+    return one(cur.fetchall())
 
 def select_zone_center_A(db, zone_id):
-    cur = db.execute('SELECT center_A FROM zone WHERE id=?', [zone_id])
+    cur = db.execute(
+            'SELECT center_A FROM zone WHERE id=?',
+            [int(zone_id)],
+    )
     cur.row_factory = _scalar_row_factory
-    return cur.fetchone()
+    return one(cur.fetchall())
 
 def select_zone_atoms(db, zone_id):
     cur = db.execute('''\
@@ -288,16 +304,16 @@ def select_zone_atoms(db, zone_id):
             FROM assembly
             JOIN zone ON assembly.id = zone.assembly_id
             WHERE zone.id=?
-    ''', [zone_id])
+    ''', [int(zone_id)])
     cur.row_factory = _scalar_row_factory
-    return cur.fetchone()
+    return one(cur.fetchall())
 
 def select_zone_subchains(db, zone_id):
     cur = db.execute('''\
             SELECT pdb_id, symmetry_mate
             FROM subchain
             WHERE zone_id = ?
-    ''', [zone_id])
+    ''', [int(zone_id)])
     subchains = cur.fetchall()
 
     cur = db.execute('''\
@@ -314,7 +330,7 @@ def select_zone_neighbors(db, zone_id):
             SELECT neighbor_id
             FROM zone_neighbor
             WHERE zone_id=?
-    ''', [zone_id])
+    ''', [int(zone_id)])
     cur.row_factory = _scalar_row_factory
     return cur.fetchall()
 

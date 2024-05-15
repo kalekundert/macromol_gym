@@ -96,7 +96,7 @@ def main():
 
     args = docopt.docopt(__doc__)
 
-    train_db = open_db(args['<db>'])
+    train_db = open_db(args['<db>'], mode='rw')
     census_db = open_census_db(census_path := args['<census>'], read_only=True)
     config = load_config(train_db, census_path, nt.load(args['<config>']))
     pdb_dir = Path(os.environ['PDB_MMCIF'])

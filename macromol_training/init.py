@@ -13,6 +13,6 @@ def main():
     import docopt
     args = docopt.docopt(__doc__)
 
-    db = open_db(args['<db>'])
+    db = open_db(args['<db>'], mode='rwc')
     with db:
         init_db(db)
