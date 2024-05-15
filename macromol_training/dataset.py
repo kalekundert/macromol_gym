@@ -15,6 +15,7 @@ from scipy.spatial.transform import Rotation
 from torch.utils.data import Dataset
 from dataclasses import dataclass
 from reprfunc import repr_from_init
+from functools import partial
 from itertools import product
 from pathlib import Path
 from math import radians
@@ -68,6 +69,7 @@ class NeighborDataset(Dataset):
     def __getitem__(self, i):
         if self.db is None:
             self.db = open_db(self.db_path)
+            self.db_cache = {}
 
         zone_id, frame_ia, frame_ab, b = get_neighboring_frames(
                 self.db, i,
@@ -100,33 +102,14 @@ class CnnNeighborDataset(NeighborDataset):
         # general---API for common image parameters.  If you need to do 
         # something beyond the scope of this API, use `NeighborDataset` 
         # directly.
-
-        def input_from_atoms(atoms):
-            atoms = mmvox.set_atom_radius_A(atoms, img_params.atom_radius_A)
-            mmvox_img_params = mmvox.ImageParams(
-                    channels=(
-                        len(img_params.element_channels)
-                        + img_params.ligand_channel
-                    ),
-                    grid=img_params.grid,
-                    assign_channels=assign_channels,
-            )
-            return mmvox.image_from_atoms(atoms, mmvox_img_params)
-
-        def assign_channels(atoms):
-            channels = img_params.element_channels
-            atoms = mmvox.set_atom_channels_by_element(atoms, channels)
-
-            if img_params.ligand_channel:
-                atoms = add_ligand_channel(atoms, len(channels))
-
-            return atoms
-
         super().__init__(
                 db_path=db_path,
                 split=split,
                 neighbor_params=neighbor_params,
-                input_from_atoms=input_from_atoms,
+                input_from_atoms=partial(
+                    image_from_atoms,
+                    img_params=img_params,
+                ),
         )
 
 class InfiniteSampler:
@@ -209,6 +192,28 @@ class InfiniteSampler:
             self.curr_epoch = epoch
 
     __repr__ = repr_from_init
+
+def image_from_atoms(atoms, img_params):
+
+    def assign_channels(atoms):
+        channels = img_params.element_channels
+        atoms = mmvox.set_atom_channels_by_element(atoms, channels)
+
+        if img_params.ligand_channel:
+            atoms = add_ligand_channel(atoms, len(channels))
+
+        return atoms
+
+    atoms = mmvox.set_atom_radius_A(atoms, img_params.atom_radius_A)
+    mmvox_img_params = mmvox.ImageParams(
+            channels=(
+                len(img_params.element_channels)
+                + img_params.ligand_channel
+            ),
+            grid=img_params.grid,
+            assign_channels=assign_channels,
+    )
+    return mmvox.image_from_atoms(atoms, mmvox_img_params)
 
 def add_ligand_channel(atoms, channel):
     ligand_channel = (
