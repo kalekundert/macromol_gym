@@ -131,14 +131,46 @@ class CnnNeighborDataset(NeighborDataset):
 
 class InfiniteSampler:
     """
-    Yield indices that continue incrementing between epochs.
+    Draw reproducible samples from an infinite map-style dataset, i.e. a 
+    dataset that accepts integer indices of any size.
 
-    This sampler is meant to be used with an infinite map-style dataset, i.e. a 
-    dataset that accepts integer indices of any size.  The sampler accepts an 
-    "epoch size" parameter, but this really just determines how often "end of 
-    epoch" tasks, like running the validation set or saving checkpoints, are 
-    performed.  It doesn't have to relate to the number of training examples, 
-    which may be infinite.
+    Arguments:
+        epoch_size:
+            The number of examples to include in each epoch.  Note that, 
+            because the dataset is assumed to have an infinite number of 
+            examples, this parameter doesn't have to relate to the amount of 
+            data in the dataset.  Instead, it usually just specifies how often 
+            "end of epoch" tasks, like running the validation set or saving 
+            checkpoints, are performed.
+
+        start_index:
+            The first index to sample.
+
+        start_epoch:
+            The first epoch number to use when sampling.  This affects the 
+            random seed used for shuffling.  Note that this parameter doesn't 
+            have any effect if (i) `set_epoch()` is called before every epoch 
+            and (ii) *increment_across_epochs* is enabled.  The first condition 
+            should be satisfied by any sane training environment, and the 
+            second condition is the default.  In this case, the "start" epoch 
+            is overridden by the first call to `set_epoch()`.
+
+        increment_across_epochs:
+            If *False*, yield the same indices in the same order every epoch.  
+            If *True*, yield new indices in every epoch, without skipping any.  
+            This option is typically enabled for the training set, and disabled 
+            for the validation and test sets.
+
+        shuffle:
+            If *True*, shuffle the indices within each epoch.  Note that this 
+            doesn't affect which indices are included in each epoch.  For 
+            example, with an epoch size of 3, this option might produce (3,1,2) 
+            in the first epoch and (4,6,5) in the second, but it wouldn't 
+            ever produce (1,6,5).
+
+        rng_factory:
+            A factory function that creates a random number generator from a 
+            given integer seed.
     """
 
     def __init__(
@@ -146,13 +178,15 @@ class InfiniteSampler:
             epoch_size: int,
             *,
             start_index: int = 0,
-            curr_epoch: int = 0,
+            start_epoch: int = 0,
+            increment_across_epochs: bool = True,
             shuffle: bool = False,
             rng_factory: Callable[[int], np.random.Generator] = np.random.default_rng,
     ):
         self.start_index = start_index
         self.epoch_size = epoch_size
-        self.curr_epoch = curr_epoch
+        self.curr_epoch = start_epoch
+        self.increment_across_epochs = increment_across_epochs
         self.shuffle = shuffle
         self.rng_factory = rng_factory
 
@@ -171,7 +205,8 @@ class InfiniteSampler:
         return self.epoch_size
 
     def set_epoch(self, epoch: int):
-        self.curr_epoch = epoch
+        if self.increment_across_epochs:
+            self.curr_epoch = epoch
 
     __repr__ = repr_from_init
 

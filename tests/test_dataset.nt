@@ -14,6 +14,25 @@ test_infinite_sampler:
       - 1, 2
       - 3, 4
   -
+    id: start-epoch
+    sampler:
+      > mmt.InfiniteSampler(
+      >     epoch_size=2,
+      >     start_epoch=1,
+      >     increment_across_epochs=False,
+      > )
+    expected_len: 2
+    expected_iter:
+      - 2, 3
+      - 2, 3
+  -
+    id: increment-across-epochs
+    sampler: mmt.InfiniteSampler(2, increment_across_epochs=False)
+    expected_len: 2
+    expected_iter:
+      - 0, 1
+      - 0, 1
+  -
     id: shuffle
     sampler: mmt.InfiniteSampler(5, shuffle=True)
     expected_len: 5
@@ -25,4 +44,3 @@ test_infinite_sampler:
     expected_iter:
       - 2, 4, 3, 0, 1
       - 9, 5, 6, 7, 8
-
