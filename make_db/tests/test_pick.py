@@ -1,4 +1,4 @@
-import macromol_training as mmt
+import macromol_gym as mmg
 import macromol_census as mmc
 import macromol_dataframe as mmdf
 import parametrize_from_file as pff
@@ -58,7 +58,7 @@ def atoms(params):
         )
 )
 def test_prune_nonbiological_residues(atoms, blacklist, expected):
-    actual = mmt.prune_nonbiological_residues(atoms, blacklist)
+    actual = mmg.prune_nonbiological_residues(atoms, blacklist)
     pl.testing.assert_frame_equal(actual, expected)
 
 @pff.parametrize(
@@ -71,8 +71,8 @@ def test_prune_nonbiological_residues(atoms, blacklist, expected):
         )
 )
 def test_prune_distant_atoms(atoms, centers_A, radius_A, boundary_depth_A, expected):
-    kd_tree = mmt.make_kd_tree(atoms)
-    actual = mmt.prune_distant_atoms(
+    kd_tree = mmg.make_kd_tree(atoms)
+    actual = mmg.prune_distant_atoms(
             atoms, 
             kd_tree,
             centers_A=centers_A,
@@ -91,7 +91,7 @@ def test_prune_distant_atoms(atoms, centers_A, radius_A, boundary_depth_A, expec
         ),
 )
 def test_count_atoms(atoms, expected):
-    actual = mmt.count_atoms(atoms, ['subchain_id'])
+    actual = mmg.count_atoms(atoms, ['subchain_id'])
     pl.testing.assert_frame_equal(
             actual, expected,
             check_exact=False,
@@ -120,9 +120,9 @@ def test_find_zone_subchains(
             subchains,
             subchain_pairs,
 ):
-    kd_tree = mmt.make_kd_tree(atoms)
-    asym_counts = mmt.count_atoms(atoms, ['subchain_id'])
-    actual_subchains, actual_subchain_pairs = mmt.find_zone_subchains(
+    kd_tree = mmg.make_kd_tree(atoms)
+    asym_counts = mmg.count_atoms(atoms, ['subchain_id'])
+    actual_subchains, actual_subchain_pairs = mmg.find_zone_subchains(
             atoms,
             kd_tree,
             asym_counts=asym_counts,
@@ -158,7 +158,7 @@ def test_find_zone_subchains(
         ),
 )
 def test_check_elements(atoms, center_A, radius_A, whitelist, expected):
-    actual = mmt.check_elements(atoms, whitelist)
+    actual = mmg.check_elements(atoms, whitelist)
     assert actual == expected
 
 @pff.parametrize(
@@ -173,9 +173,9 @@ def test_check_elements(atoms, center_A, radius_A, whitelist, expected):
 def test_find_zone_neighbors(atoms, centers_A, radius_A, min_density_atoms_nm3, expected):
     from test_density import calc_density_atoms_nm3
 
-    kd_tree = mmt.make_kd_tree(atoms)
+    kd_tree = mmg.make_kd_tree(atoms)
 
-    actual = mmt.find_zone_neighbors(
+    actual = mmg.find_zone_neighbors(
             # The real program uses an approximate method of calculating 
             # densities.  But exact densities are much easier to reason about, 
             # for the purposes of testing.
@@ -202,7 +202,7 @@ def test_find_zone_neighbors(atoms, centers_A, radius_A, min_density_atoms_nm3, 
         ),
 )
 def test_calc_zone_centers_A(atoms, spacing_A, expected):
-    actual = mmt.calc_zone_centers_A(atoms, spacing_A)
+    actual = mmg.calc_zone_centers_A(atoms, spacing_A)
 
     def normalize_coords(coords):
         return sorted(tuple(x) for x in coords)
@@ -287,10 +287,10 @@ def test_pick_training_zones_1ypi_2ypi_3ypi():
     )
 
     # Finished setting up the census database, now we can pick the dataset:
-    train_db = mmt.open_db(':memory:', mode='rwc')
-    mmt.init_db(train_db)
+    train_db = mmg.open_db(':memory:', mode='rwc')
+    mmg.init_db(train_db)
 
-    config = mmt.Config(
+    config = mmg.Config(
             census_md5=None,
 
             zone_size_A=10,
@@ -316,16 +316,16 @@ def test_pick_training_zones_1ypi_2ypi_3ypi():
             atom_inclusion_radius_A=75,
             atom_inclusion_boundary_depth_A=3,
     )
-    mmt.pick_training_zones(
+    mmg.pick_training_zones(
             train_db,
             census_db,
             config=config,
             get_mmcif_path=lambda pdb_id: pdb_dir / f'{pdb_id}.cif.gz',
     )
 
-    mmt.show(train_db, 'SELECT * FROM structure')
-    mmt.show(train_db, 'SELECT * FROM assembly')
-    mmt.show(train_db, '''\
+    mmg.show(train_db, 'SELECT * FROM structure')
+    mmg.show(train_db, 'SELECT * FROM assembly')
+    mmg.show(train_db, '''\
             SELECT 
                 zone.id,
                 zone.assembly_id,
@@ -340,7 +340,7 @@ def test_pick_training_zones_1ypi_2ypi_3ypi():
 
     # This isn't the most stringent check, but I can't really think of anything 
     # else that would be robust to small changes in the code.
-    assert mmt.select_structures(train_db) == ['1ypi', '2ypi']
+    assert mmg.select_structures(train_db) == ['1ypi', '2ypi']
 
 def test_pick_training_zones_7spt_1c58():
     # 7spt is a structure of a glucose transporter.  It contains a number of 
@@ -374,10 +374,10 @@ def test_pick_training_zones_7spt_1c58():
     )
 
     # Finished setting up the census database, now we can pick the dataset:
-    train_db = mmt.open_db(':memory:', mode='rwc')
-    mmt.init_db(train_db)
+    train_db = mmg.open_db(':memory:', mode='rwc')
+    mmg.init_db(train_db)
 
-    config = mmt.Config(
+    config = mmg.Config(
             census_md5=None,
 
             zone_size_A=10,
@@ -403,16 +403,16 @@ def test_pick_training_zones_7spt_1c58():
             atom_inclusion_radius_A=75,
             atom_inclusion_boundary_depth_A=3,
     )
-    mmt.pick_training_zones(
+    mmg.pick_training_zones(
             train_db,
             census_db,
             config=config,
             get_mmcif_path=lambda pdb_id: pdb_dir / f'{pdb_id}.cif.gz',
     )
 
-    mmt.show(train_db, 'SELECT * FROM structure')
-    mmt.show(train_db, 'SELECT * FROM assembly')
-    mmt.show(train_db, '''\
+    mmg.show(train_db, 'SELECT * FROM structure')
+    mmg.show(train_db, 'SELECT * FROM assembly')
+    mmg.show(train_db, '''\
             SELECT 
                 zone.id,
                 zone.assembly_id,
@@ -425,10 +425,10 @@ def test_pick_training_zones_7spt_1c58():
             LEFT JOIN subchain_pair ON zone.id = subchain_pair.zone_id
     ''')
 
-    assert mmt.select_structures(train_db) == ['7spt']
+    assert mmg.select_structures(train_db) == ['7spt']
 
     # Subchains B, C, and D are the lipids, and should be ignored.
-    subchains = mmt.select_dataframe(
+    subchains = mmg.select_dataframe(
             train_db,
             'SELECT pdb_id FROM subchain',
     )
@@ -436,7 +436,7 @@ def test_pick_training_zones_7spt_1c58():
 
     # The structure should contain at least one zone with both the protein and 
     # the glucose ligand.
-    subchain_pairs = mmt.select_dataframe(
+    subchain_pairs = mmg.select_dataframe(
             train_db,
             'SELECT pdb_id_1, pdb_id_2 FROM subchain_pair',
     )
@@ -449,8 +449,8 @@ def test_load_config(tmp_path, monkeypatch):
         'nonbio_residues': 'GOL\nPEG',
     })
 
-    db = mmt.open_db(':memory:', mode='rwc')
-    mmt.init_db(db)
+    db = mmg.open_db(':memory:', mode='rwc')
+    mmg.init_db(db)
 
     params = dict(
         zone_size_A='10',
@@ -473,7 +473,7 @@ def test_load_config(tmp_path, monkeypatch):
     )
 
     with db:
-        config_1 = mmt.load_config(db, 'census_db', params)
+        config_1 = mmg.load_config(db, 'census_db', params)
 
     assert config_1.census_md5 == 'db3ec040e20dfc657dab510aeab74759'
     assert config_1.zone_size_A == 10
@@ -494,25 +494,25 @@ def test_load_config(tmp_path, monkeypatch):
     assert config_1.atom_inclusion_radius_A == 76
     assert config_1.atom_inclusion_boundary_depth_A == 3
 
-    assert mmt.select_metadatum(db, 'census_md5') == 'db3ec040e20dfc657dab510aeab74759'
-    assert mmt.select_metadatum(db, 'zone_size_A') == 10
-    assert mmt.select_metadatum(db, 'density_check_radius_A') == 15
-    assert mmt.select_metadatum(db, 'density_check_voxel_size_A') == 2
-    assert mmt.select_metadatum(db, 'density_check_min_atoms_nm3') == 40
-    assert mmt.select_metadatum(db, 'density_check_max_atoms_nm3') == 70
-    assert mmt.select_metadatum(db, 'subchain_check_radius_A') == 8
-    assert mmt.select_metadatum(db, 'subchain_check_fraction_of_zone') == approx(0.75)
-    assert mmt.select_metadatum(db, 'subchain_check_fraction_of_subchain') == approx(0.75)
-    assert mmt.select_metadatum(db, 'subchain_pair_check_fraction_of_zone') == approx(0.25)
-    assert mmt.select_metadatum(db, 'subchain_pair_check_fraction_of_subchain') == approx(0.75)
-    assert mmt.select_metadatum(db, 'neighbor_geometry') == 'icosahedron faces'
-    assert mmt.select_metadatum(db, 'neighbor_distance_A') == 30
-    assert mmt.select_metadatum(db, 'neighbor_count_threshold') == 1
-    assert mmt.select_metadatum(db, 'atom_inclusion_radius_A') == 76
-    assert mmt.select_metadatum(db, 'atom_inclusion_boundary_depth_A') == 3
+    assert mmg.select_metadatum(db, 'census_md5') == 'db3ec040e20dfc657dab510aeab74759'
+    assert mmg.select_metadatum(db, 'zone_size_A') == 10
+    assert mmg.select_metadatum(db, 'density_check_radius_A') == 15
+    assert mmg.select_metadatum(db, 'density_check_voxel_size_A') == 2
+    assert mmg.select_metadatum(db, 'density_check_min_atoms_nm3') == 40
+    assert mmg.select_metadatum(db, 'density_check_max_atoms_nm3') == 70
+    assert mmg.select_metadatum(db, 'subchain_check_radius_A') == 8
+    assert mmg.select_metadatum(db, 'subchain_check_fraction_of_zone') == approx(0.75)
+    assert mmg.select_metadatum(db, 'subchain_check_fraction_of_subchain') == approx(0.75)
+    assert mmg.select_metadatum(db, 'subchain_pair_check_fraction_of_zone') == approx(0.25)
+    assert mmg.select_metadatum(db, 'subchain_pair_check_fraction_of_subchain') == approx(0.75)
+    assert mmg.select_metadatum(db, 'neighbor_geometry') == 'icosahedron faces'
+    assert mmg.select_metadatum(db, 'neighbor_distance_A') == 30
+    assert mmg.select_metadatum(db, 'neighbor_count_threshold') == 1
+    assert mmg.select_metadatum(db, 'atom_inclusion_radius_A') == 76
+    assert mmg.select_metadatum(db, 'atom_inclusion_boundary_depth_A') == 3
 
     with db:
-        config_2 = mmt.load_config(db, 'census_db', params)
+        config_2 = mmg.load_config(db, 'census_db', params)
 
     assert config_1 == config_2
 
@@ -526,15 +526,15 @@ def test_load_config(tmp_path, monkeypatch):
 def test_load_config_err(tmp_files, pre_config, config, error, monkeypatch):
     monkeypatch.chdir(tmp_files)
 
-    db = mmt.open_db(':memory:', mode='rwc')
-    mmt.init_db(db)
+    db = mmg.open_db(':memory:', mode='rwc')
+    mmg.init_db(db)
 
     if pre_config:
         with db:
-            mmt.load_config(db, tmp_files / 'pre_mmc_pdb.duckdb', pre_config)
+            mmg.load_config(db, tmp_files / 'pre_mmc_pdb.duckdb', pre_config)
 
     with error:
         with db:
-            mmt.load_config(db, tmp_files / 'mmc_pdb.duckdb', config)
+            mmg.load_config(db, tmp_files / 'mmc_pdb.duckdb', config)
 
 

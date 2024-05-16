@@ -10,6 +10,5 @@ from .split import *
 from .geometry import *
 from .density import *
 from .interpro import *
-from .dataset import *
 
 del main

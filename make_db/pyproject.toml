@@ -1,0 +1,69 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "macromol_gym"
+authors = [
+  {name = "Kale Kundert", email = "kale@thekunderts.net"},
+]
+readme = 'README.md'
+dynamic = ["version", "description"]
+requires-python = "~=3.10"
+classifiers = [
+  'Programming Language :: Python :: 3',
+]
+dependencies = [
+  'aiohttp',
+  'docopt',
+  'icosphere',
+  'macromol_census',
+  'macromol_dataframe',
+  'macromol_voxelize',
+  'more_itertools',
+  'nestedtext',
+  'networkx',
+  'numpy',
+  'periodictable',
+  'pipeline_func',
+  'reprfunc',
+  'scikit-learn',
+  'scipy',
+  'tqdm',
+]
+
+[project.optional-dependencies]
+test = [
+  'pytest',
+  'parametrize_from_file',
+  'pytest_unordered',
+  'pytest_tmp_files',
+]
+
+[project.scripts]
+mmg_init = 'macromol_gym.init:main'
+mmg_pick_training_examples = 'macromol_gym.pick:main'
+mmg_fetch_interpro_clusters = 'macromol_gym.interpro:main'
+mmg_split_training_examples = 'macromol_gym.split:main'
+
+[project.urls]
+'Documentation' = 'https://macromol-gym.readthedocs.io/en/latest/'
+'Version Control' = 'https://github.com/kalekundert/macromol_gym'
+'Bug Tracker' = 'https://github.com/kalekundert/macromol_gym/issues'
+'Continuous Integration' = 'https://github.com/kalekundert/macromol_gym/actions'
+'Test Coverage' = 'https://coveralls.io/github/kalekundert/macromol_gym'
+
+[tool.pytest.ini_options]
+addopts = "--ignore=macromol_gym --doctest-modules --doctest-glob='*.rst'"
+doctest_optionflags = 'NORMALIZE_WHITESPACE'
+
+[tool.coverage.run]
+branch = true
+parallel = true
+source = ['macromol_gym']
+
+[tool.coverage.report]
+exclude_lines = [
+    "^\\s*raise AssertionError\\b",
+    "^\\s*raise NotImplementedError\\b",
+]

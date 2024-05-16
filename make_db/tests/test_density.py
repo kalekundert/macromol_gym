@@ -1,4 +1,4 @@
-import macromol_training as mmt
+import macromol_gym as mmg
 import macromol_dataframe as mmdf
 import parametrize_from_file as pff
 import numpy as np
@@ -30,7 +30,7 @@ def test_density_manual(
         expected_atoms_nm3,
         allowed_err_atoms_nm3,
 ):
-    calc_density_atoms_nm3 = mmt.make_density_interpolator(
+    calc_density_atoms_nm3 = mmg.make_density_interpolator(
             atoms, radius_A, voxel_size_A,
     )
     assert calc_density_atoms_nm3(coords_A) == approx(
@@ -41,8 +41,8 @@ def test_density_manual(
 @pytest.mark.parametrize('mmcif_path', MOCK_PDB.glob('*.cif.gz'))
 def test_density_auto(mmcif_path):
     atoms = mmdf.read_asymmetric_unit(mmcif_path)
-    kd_tree = mmt.make_kd_tree(atoms)
-    coords_A = mmt.calc_zone_centers_A(atoms, spacing_A=10)
+    kd_tree = mmg.make_kd_tree(atoms)
+    coords_A = mmg.calc_zone_centers_A(atoms, spacing_A=10)
     radius_A = 15
 
     expected = np.array([
@@ -50,7 +50,7 @@ def test_density_auto(mmcif_path):
             for coord_A in coords_A
     ])
 
-    interp_density_atoms_nm3 = mmt.make_density_interpolator(
+    interp_density_atoms_nm3 = mmg.make_density_interpolator(
             atoms, radius_A, voxel_size_A=2,
     )
 
@@ -60,7 +60,7 @@ def test_density_auto(mmcif_path):
 
 
 def calc_density_atoms_nm3(atoms, kd_tree, center_A, radius_A):
-    atoms = mmt.select_nearby_atoms(
+    atoms = mmg.select_nearby_atoms(
             atoms,
             kd_tree,
             center_A,

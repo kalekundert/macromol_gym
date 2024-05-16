@@ -1,14 +1,14 @@
 test_infinite_sampler:
   -
     id: baseline
-    sampler: mmt.InfiniteSampler(2)
+    sampler: mmgp.InfiniteSampler(2)
     expected_len: 2
     expected_iter:
       - 0, 1
       - 2, 3
   -
     id: start-index
-    sampler: mmt.InfiniteSampler(2, start_index=1)
+    sampler: mmgp.InfiniteSampler(2, start_index=1)
     expected_len: 2
     expected_iter:
       - 1, 2
@@ -16,7 +16,7 @@ test_infinite_sampler:
   -
     id: start-epoch
     sampler:
-      > mmt.InfiniteSampler(
+      > mmgp.InfiniteSampler(
       >     epoch_size=2,
       >     start_epoch=1,
       >     increment_across_epochs=False,
@@ -27,14 +27,14 @@ test_infinite_sampler:
       - 2, 3
   -
     id: increment-across-epochs
-    sampler: mmt.InfiniteSampler(2, increment_across_epochs=False)
+    sampler: mmgp.InfiniteSampler(2, increment_across_epochs=False)
     expected_len: 2
     expected_iter:
       - 0, 1
       - 0, 1
   -
     id: shuffle
-    sampler: mmt.InfiniteSampler(5, shuffle=True)
+    sampler: mmgp.InfiniteSampler(5, shuffle=True)
     expected_len: 5
     # The order of these sequences is pseudo-random.  I got these expected 
     # values by simply running the program once and seeing what it produced, 

@@ -1,5 +1,5 @@
-import macromol_training as mmt
-import macromol_training.dataset as _mmt
+import macromol_gym_pretrain as mmgp
+import macromol_gym_pretrain.dataset as _mmgp
 import macromol_voxelize as mmvox
 import torch.testing
 import polars as pl
@@ -18,31 +18,31 @@ from hypothesis.extra.numpy import arrays
 from pytest import approx
 
 with_py = pff.Namespace()
-with_mmt = pff.Namespace('import macromol_training as mmt')
+with_mmgp = pff.Namespace('import macromol_gym_pretrain as mmgp')
 
 def make_db(path=':memory:', *, split='train'):
-    db = mmt.open_db(path, mode='rwc')
+    db = mmgp.open_db(path, mode='rwc')
     with db:
-        mmt.init_db(db)
+        mmgp.init_db(db)
 
         zone_size_A = 10
-        neighbors_i = mmt.icosahedron_faces() * 30
+        neighbors_i = mmgp.icosahedron_faces() * 30
 
-        mmt.upsert_metadata(db, {'zone_size_A': zone_size_A})
-        mmt.insert_neighbors(db, neighbors_i)
+        mmgp.upsert_metadata(db, {'zone_size_A': zone_size_A})
+        mmgp.insert_neighbors(db, neighbors_i)
 
         struct_ids = [
-                mmt.insert_structure(db, '1abc', model_id='1'),
-                mmt.insert_structure(db, '2abc', model_id='1'),
+                mmgp.insert_structure(db, '1abc', model_id='1'),
+                mmgp.insert_structure(db, '2abc', model_id='1'),
         ]
         assembly_ids = [
-                mmt.insert_assembly(
+                mmgp.insert_assembly(
                     db, struct_ids[0], '1',
                     atoms=pl.DataFrame([
                         dict(element='C', x=0, y=0, z=0, is_polymer=True),
                     ]),
                 ),
-                mmt.insert_assembly(
+                mmgp.insert_assembly(
                     db, struct_ids[1], '1',
                     atoms=pl.DataFrame([
                         dict(element='N', x=15, y=15, z=15, is_polymer=True),
@@ -55,13 +55,13 @@ def make_db(path=':memory:', *, split='train'):
                 np.array([15, 15, 15]),
         ]
         zone_ids = [
-                mmt.insert_zone(
+                mmgp.insert_zone(
                     db,
                     assembly_ids[0],
                     center_A=zone_centers_A[0],
                     neighbor_ids=[0],
                 ),
-                mmt.insert_zone(
+                mmgp.insert_zone(
                     db,
                     assembly_ids[1],
                     center_A=zone_centers_A[1],
@@ -69,7 +69,7 @@ def make_db(path=':memory:', *, split='train'):
                 ),
         ]
 
-        mmt.update_splits(db, {'1abc': split, '2abc': split})
+        mmgp.update_splits(db, {'1abc': split, '2abc': split})
 
     return db, zone_ids, zone_centers_A, zone_size_A
 
@@ -78,16 +78,16 @@ def test_cnn_neighbor_dataset_pickle(tmp_path):
     db_path = tmp_path / 'db.sqlite'
     db, *_ = make_db(db_path, split='train')
 
-    dataset = mmt.CnnNeighborDataset(
+    dataset = mmgp.CnnNeighborDataset(
             db_path,
             split='train',
-            neighbor_params=mmt.NeighborParams(
-                direction_candidates=mmt.cube_faces(),
+            neighbor_params=mmgp.NeighborParams(
+                direction_candidates=mmgp.cube_faces(),
                 distance_A=30,
                 noise_max_distance_A=5,
                 noise_max_angle_deg=10,
             ),
-            img_params=mmt.ImageParams(
+            img_params=mmgp.ImageParams(
                 grid=mmvox.Grid(
                     length_voxels=24,
                     resolution_A=1,
@@ -111,7 +111,7 @@ def test_cnn_neighbor_dataset_pickle(tmp_path):
 
 @pff.parametrize(
         schema=pff.cast(
-            sampler=with_mmt.eval,
+            sampler=with_mmgp.eval,
             expected_len=with_py.eval,
             expected_iter=with_py.eval,
         ),
@@ -134,7 +134,7 @@ def test_add_ligand_channel():
         dict(channels=[1],   is_polymer=True),
         dict(channels=[0,1], is_polymer=True),
     ])
-    atoms = mmt.add_ligand_channel(atoms, 2)
+    atoms = mmgp.add_ligand_channel(atoms, 2)
 
     assert atoms.to_dicts() == [
         dict(channels=[],    is_polymer=False),
@@ -156,15 +156,15 @@ def test_get_neighboring_frames():
     db, zone_ids, zone_centers_A, zone_size_A = make_db()
     db_cache = {}
 
-    params = mmt.NeighborParams(
-            direction_candidates=mmt.cube_faces(),
+    params = mmgp.NeighborParams(
+            direction_candidates=mmgp.cube_faces(),
             distance_A=30,
             noise_max_distance_A=5,
             noise_max_angle_deg=10,
     )
 
     for i in range(100):
-        zone_id, frame_ia, frame_ab, b = mmt.get_neighboring_frames(
+        zone_id, frame_ia, frame_ab, b = mmgp.get_neighboring_frames(
                 db, i,
                 zone_ids=zone_ids,
                 neighbor_params=params,
@@ -198,16 +198,16 @@ def test_load_from_cache():
 
     cache = {}
 
-    assert _mmt._load_from_cache(cache, 'a', value_factory) == 1
+    assert _mmgp._load_from_cache(cache, 'a', value_factory) == 1
     assert num_calls == 1
 
-    assert _mmt._load_from_cache(cache, 'a', value_factory) == 1
+    assert _mmgp._load_from_cache(cache, 'a', value_factory) == 1
     assert num_calls == 1
 
-    assert _mmt._load_from_cache(cache, 'b', value_factory) == 1
+    assert _mmgp._load_from_cache(cache, 'b', value_factory) == 1
     assert num_calls == 2
 
-    assert _mmt._load_from_cache(cache, 'b', value_factory) == 1
+    assert _mmgp._load_from_cache(cache, 'b', value_factory) == 1
     assert num_calls == 2
 
 def test_make_neighboring_frames():
@@ -232,7 +232,7 @@ def test_make_neighboring_frames():
     # ignoring the z-direction in this test, because it's harder to reason 
     # about.
 
-    frame_ia, frame_ab = _mmt._make_neighboring_frames(
+    frame_ia, frame_ab = _mmgp._make_neighboring_frames(
             home_origin_i=v(2,1,0),
             neighbor_distance=2,
             neighbor_direction_i=v(0, 1, 0),
@@ -258,14 +258,14 @@ def test_sample_uniform_vector_in_neighborhood_2():
         [-1, 0, 0],
         [ 1, 0, 0],
     ])
-    pairwise_rot_mat = _mmt._precalculate_pairwise_rotation_matrices(neighbors)
+    pairwise_rot_mat = _mmgp._precalculate_pairwise_rotation_matrices(neighbors)
 
     n = 1000
     x = np.zeros((2,n,3))
 
     for i in range(2):
         for j in range(n):
-            x[i,j] = _mmt._sample_uniform_unit_vector_in_neighborhood(
+            x[i,j] = _mmgp._sample_uniform_unit_vector_in_neighborhood(
                     rng,
                     neighbors,
                     pairwise_rot_mat,
@@ -301,13 +301,13 @@ def test_sample_uniform_vector_in_neighborhood_6():
         [ 0,  0, -1],
         [ 0,  0,  1],
     ])
-    pairwise_rot_mat = _mmt._precalculate_pairwise_rotation_matrices(neighbors)
+    pairwise_rot_mat = _mmgp._precalculate_pairwise_rotation_matrices(neighbors)
 
     n = 1000
     x = np.zeros((n,3))
     
     for i in range(n):
-        x[i] = _mmt._sample_uniform_unit_vector_in_neighborhood(
+        x[i] = _mmgp._sample_uniform_unit_vector_in_neighborhood(
                 rng,
                 neighbors,
                 pairwise_rot_mat,
@@ -338,7 +338,7 @@ def test_sample_uniform_unit_vector():
     x = np.array([1, 0, 0])  # arbitrary reference point
 
     for i in range(n):
-        y = _mmt._sample_uniform_unit_vector(rng)
+        y = _mmgp._sample_uniform_unit_vector(rng)
         d[i] = np.linalg.norm(y - x)
 
     cdf = lambda d: d**2 / 4
@@ -368,7 +368,7 @@ def test_sample_noise_frame():
     expected_dists = calc_pairwise_distances(x)
 
     for i in range(1000):
-        frame_xy = _mmt._sample_noise_frame(
+        frame_xy = _mmgp._sample_noise_frame(
                 rng,
                 max_distance_A=10,
                 max_angle_deg=20,
@@ -392,7 +392,7 @@ def test_sample_coord_from_cube():
     size = 4
 
     for i in range(n):
-        x[i] = _mmt._sample_coord_from_cube(rng, center, size)
+        x[i] = _mmgp._sample_coord_from_cube(rng, center, size)
 
     # Check that all the points are in-bounds:
     assert np.all(x[:,0] >= -2)
@@ -420,7 +420,7 @@ def test_sample_coord_from_cube():
 
 def test_require_unit_vectors():
     v = np.array([[2, 0, 0], [0, 2, 0]])
-    u = _mmt._require_unit_vectors(v)
+    u = _mmgp._require_unit_vectors(v)
     assert u == approx(np.array([[1, 0, 0], [0, 1, 0]]))
 
 vectors = arrays(
@@ -446,6 +446,6 @@ def test_align_vectors(a, b):
     assume(norm_a > 1e-6)
     assume(norm_b > 1e-6)
 
-    R = _mmt._align_vectors(a, b).as_matrix()
+    R = _mmgp._align_vectors(a, b).as_matrix()
 
     assert R @ (b / norm_b) == approx(a / norm_a)

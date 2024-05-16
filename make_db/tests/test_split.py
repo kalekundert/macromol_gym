@@ -1,4 +1,4 @@
-import macromol_training as mmt
+import macromol_gym as mmg
 import parametrize_from_file as pff
 import polars as pl
 import numpy as np
@@ -26,7 +26,7 @@ def int_dict(params):
         schema=pff.cast(clusters=clusters),
 )
 def test_group_related_structures(structures, clusters, expected):
-    groups = mmt.group_related_structures(structures, clusters)
+    groups = mmg.group_related_structures(structures, clusters)
 
     def normalize_groups(groups):
         return [set(x) for x in groups]
@@ -45,5 +45,5 @@ def test_group_related_structures(structures, clusters, expected):
 )
 def test_make_splits(struct_zone_counts, clusters, targets, expected):
     rng = MockRng()
-    splits = mmt.make_splits(rng, struct_zone_counts, clusters, targets)
+    splits = mmg.make_splits(rng, struct_zone_counts, clusters, targets)
     assert splits == expected

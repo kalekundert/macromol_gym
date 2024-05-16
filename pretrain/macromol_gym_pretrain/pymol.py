@@ -1,5 +1,5 @@
 import pymol
-import macromol_training as mmt
+import macromol_gym_pretrain as mmgp
 import macromol_dataframe as mmdf
 import numpy as np
 import os
@@ -7,13 +7,13 @@ import re
 
 from pymol import cmd
 from pymol.wizard import Wizard
-from macromol_training.database_io import (
+from macromol_gym_pretrain.database_io import (
         open_db, select_zone_ids, select_zone_pdb_ids, select_zone_atoms, 
 )
-from macromol_training.dataset import (
+from macromol_gym_pretrain.dataset import (
         NeighborParams, get_neighboring_frames,
 )
-from macromol_training.geometry import cube_faces
+from macromol_gym_pretrain.geometry import cube_faces
 from macromol_voxelize import (
         ImageParams, Grid, 
         set_atom_radius_A, set_atom_channels_by_element,
@@ -252,11 +252,11 @@ class TrainingExamples(Wizard):
             cmd.zoom('sele_a or sele_b', buffer=10)
             cmd.center('sele_a or sele_b')
 
-def mmt_training_examples(db_path):
+def mmgp_training_examples(db_path):
     wizard = TrainingExamples(db_path)
     cmd.set_wizard(wizard)
 
-pymol.cmd.extend('mmt_training_examples', mmt_training_examples)
+pymol.cmd.extend('mmgp_training_examples', mmgp_training_examples)
 
 class ManualClassifier(Wizard):
 
@@ -459,11 +459,11 @@ class ManualClassifier(Wizard):
         self.i += 1
         self.init_curr_example()
 
-def mmt_manual_classifier(db_path):
+def mmgp_manual_classifier(db_path):
     wizard = ManualClassifier(db_path)
     cmd.set_wizard(wizard)
 
-pymol.cmd.extend('mmt_manual_classifier', mmt_manual_classifier)
+pymol.cmd.extend('mmgp_manual_classifier', mmgp_manual_classifier)
 
 def get_frame_names(directions):
     # Currently, only "cube face" frames are supported.
@@ -519,7 +519,7 @@ def show_centers(spacing_A=10, density_target_atoms_nm3=35, density_radius_A=15,
     density_radius_A = float(density_radius_A)
 
     atoms = mmdf.from_pymol(sele, state)
-    zone_centers_A = mmt.calc_zone_centers_A(atoms, spacing_A)
+    zone_centers_A = mmgp.calc_zone_centers_A(atoms, spacing_A)
 
     centers_above_density_target = 0
 
@@ -552,7 +552,7 @@ def show_neighbors(sele='sele', geometry='icosahedron faces', distance_A=30, den
     density_target_atoms_nm3 = float(density_target_atoms_nm3)
     density_radius_A = float(density_radius_A)
 
-    neighbors = mmt.find_neighbor_centers_A(geometry, distance_A)
+    neighbors = mmgp.find_neighbor_centers_A(geometry, distance_A)
 
     center_A = np.zeros(3)
     cmd.iterate_state(state, sele, 'center_A[:] = (x, y, z)', space=locals())
