@@ -1,127 +1,17 @@
 import macromol_gym_pretrain as mmgp
 import macromol_gym_pretrain.dataset as _mmgp
-import macromol_voxelize as mmvox
-import torch.testing
 import polars as pl
 import numpy as np
-import parametrize_from_file as pff
-import pickle
 
+from param_helpers import make_db
 from scipy.stats import ks_1samp
 from macromol_dataframe import transform_coords, invert_coord_frame
 from itertools import combinations
-from pipeline_func import f
 
 from hypothesis import given, example, assume
 from hypothesis.strategies import floats, just
 from hypothesis.extra.numpy import arrays
 from pytest import approx
-
-with_py = pff.Namespace()
-with_mmgp = pff.Namespace('import macromol_gym_pretrain as mmgp')
-
-def make_db(path=':memory:', *, split='train'):
-    db = mmgp.open_db(path, mode='rwc')
-    with db:
-        mmgp.init_db(db)
-
-        zone_size_A = 10
-        neighbors_i = mmgp.icosahedron_faces() * 30
-
-        mmgp.upsert_metadata(db, {'zone_size_A': zone_size_A})
-        mmgp.insert_neighbors(db, neighbors_i)
-
-        struct_ids = [
-                mmgp.insert_structure(db, '1abc', model_id='1'),
-                mmgp.insert_structure(db, '2abc', model_id='1'),
-        ]
-        assembly_ids = [
-                mmgp.insert_assembly(
-                    db, struct_ids[0], '1',
-                    atoms=pl.DataFrame([
-                        dict(element='C', x=0, y=0, z=0, is_polymer=True),
-                    ]),
-                ),
-                mmgp.insert_assembly(
-                    db, struct_ids[1], '1',
-                    atoms=pl.DataFrame([
-                        dict(element='N', x=15, y=15, z=15, is_polymer=True),
-                    ]),
-                ),
-        ]
-        zone_centers_A = [
-                # Separate by more than 10Å, so that the zones can't be confused.
-                np.array([0, 0, 0]),
-                np.array([15, 15, 15]),
-        ]
-        zone_ids = [
-                mmgp.insert_zone(
-                    db,
-                    assembly_ids[0],
-                    center_A=zone_centers_A[0],
-                    neighbor_ids=[0],
-                ),
-                mmgp.insert_zone(
-                    db,
-                    assembly_ids[1],
-                    center_A=zone_centers_A[1],
-                    neighbor_ids=[10, 11, 12, 13, 14],
-                ),
-        ]
-
-        mmgp.update_splits(db, {'1abc': split, '2abc': split})
-
-    return db, zone_ids, zone_centers_A, zone_size_A
-
-
-def test_cnn_neighbor_dataset_pickle(tmp_path):
-    db_path = tmp_path / 'db.sqlite'
-    db, *_ = make_db(db_path, split='train')
-
-    dataset = mmgp.CnnNeighborDataset(
-            db_path,
-            split='train',
-            neighbor_params=mmgp.NeighborParams(
-                direction_candidates=mmgp.cube_faces(),
-                distance_A=30,
-                noise_max_distance_A=5,
-                noise_max_angle_deg=10,
-            ),
-            img_params=mmgp.ImageParams(
-                grid=mmvox.Grid(
-                    length_voxels=24,
-                    resolution_A=1,
-                ),
-                atom_radius_A=0.5,
-                element_channels=['C', 'N', 'O', '.*'],
-                ligand_channel=True,
-            ),
-    )
-    dataset_pickle = (
-            dataset
-            | f(pickle.dumps)
-            | f(pickle.loads)
-    )
-
-    img, b = dataset[0]
-    img_pickle, b_pickle = dataset_pickle[0]
-
-    torch.testing.assert_close(img, img_pickle)
-    assert b == b_pickle
-
-@pff.parametrize(
-        schema=pff.cast(
-            sampler=with_mmgp.eval,
-            expected_len=with_py.eval,
-            expected_iter=with_py.eval,
-        ),
-)
-def test_infinite_sampler(sampler, expected_len, expected_iter):
-    assert len(sampler) == expected_len
-
-    for i, indices in enumerate(expected_iter):
-        sampler.set_epoch(i)
-        assert list(sampler) == list(indices)
 
 def test_add_ligand_channel():
     atoms = pl.DataFrame([
