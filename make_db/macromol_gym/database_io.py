@@ -6,6 +6,7 @@ import io
 
 from more_itertools import one, flatten, unique_everseen as unique
 from urllib.request import pathname2url
+from hashlib import md5
 from pathlib import Path
 from textwrap import dedent
 
@@ -16,6 +17,11 @@ from typing import Any, Literal
 # generating the ID in question, it might actually be a `np.int64` rather than 
 # a plain integer.  This will be interpreted by SQLite as a blob, and as a 
 # result the query will mysteriously fail.
+
+def hash_db(db_path: str | Path):
+    hash = md5()
+    hash.update(Path(db_path).read_bytes())
+    return hash.hexdigest()
 
 def open_db(path: str | Path, mode: Literal['ro', 'rw', 'rwc'] = 'ro'):
     """

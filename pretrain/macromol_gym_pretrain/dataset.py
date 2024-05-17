@@ -1,9 +1,13 @@
 import macromol_voxelize as mmvox
 import polars as pl
 import numpy as np
+import logging
+import tempfile
+import shutil
+import os
 
 from .database_io import (
-        select_metadatum, select_neighbors,
+        hash_db, select_metadatum, select_neighbors,
         select_zone_center_A, select_zone_neighbors
 )
 from macromol_dataframe import (
@@ -12,11 +16,15 @@ from macromol_dataframe import (
 )
 from scipy.spatial.transform import Rotation
 from dataclasses import dataclass
+from contextlib import contextmanager
+from pathlib import Path
 from itertools import product
 from math import radians
 
 from typing import Any, Callable, Optional
 from numpy.typing import NDArray
+
+log = logging.getLogger('macromol_gym_pretrain')
 
 @dataclass
 class NeighborParams:
@@ -31,6 +39,31 @@ class ImageParams:
     atom_radius_A: Optional[float]
     element_channels: list[str]
     ligand_channel: bool
+
+@contextmanager
+def copy_db_to_local_drive(src_path, dest_path):
+    src_path = Path(src_path)
+    dest_path = Path(dest_path)
+
+    log.info("copy database to local drive: src=%s dest=%s", src_path, dest_path)
+
+    if dest_path.exists() and hash_db(src_path) == hash_db(dest_path):
+        yield
+
+    else:
+        try:
+            shutil.copy(src_path, dest_path)
+            yield
+        finally:
+            os.unlink(dest_path)
+
+@contextmanager
+def copy_db_to_tmp(src_path, dest_name='db.sqlite'):
+    with tempfile.TemporaryDirectory(prefix='macromol_gym_') as d:
+        dest_path = Path(d) / dest_name
+        log.info("copy database to local drive: src=%s dest=%s", src_path, dest_path)
+        shutil.copy(src_path, dest_path)
+        yield dest_path
 
 def image_from_atoms(atoms, img_params):
 

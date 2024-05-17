@@ -13,6 +13,51 @@ from hypothesis.strategies import floats, just
 from hypothesis.extra.numpy import arrays
 from pytest import approx
 
+def test_copy_db_to_local_drive(tmp_path):
+    f_src = tmp_path / 'src_db.sqlite'
+    f_src.write_text('this is a database')
+
+    f_dest = tmp_path / 'dest_db.sqlite'
+
+    assert f_src.exists()
+    assert not f_dest.exists()
+
+    with mmgp.copy_db_to_local_drive(f_src, f_dest):
+        assert f_dest.exists()
+        assert f_dest.read_text() == 'this is a database'
+
+    assert f_src.exists()
+    assert not f_dest.exists()
+
+def test_copy_db_to_local_drive_already_present(tmp_path):
+    f_src = tmp_path / 'src_db.sqlite'
+    f_src.write_text('this is a database')
+
+    f_dest = tmp_path / 'dest_db.sqlite'
+    f_dest.write_text('this is a database')
+
+    assert f_src.exists()
+    assert f_dest.exists()
+
+    with mmgp.copy_db_to_local_drive(f_src, f_dest):
+        assert f_dest.exists()
+        assert f_dest.read_text() == 'this is a database'
+
+    assert f_src.exists()
+    assert f_dest.exists()
+
+def test_copy_db_to_tmp(tmp_path):
+    f = tmp_path / 'mock_db.sqlite'
+    f.write_text('this is a database')
+
+    with mmgp.copy_db_to_tmp(f) as tmp_f:
+        assert tmp_f.exists()
+        assert tmp_f.name == 'db.sqlite'
+        assert tmp_f.read_text() == 'this is a database'
+
+    assert f.exists()
+    assert not tmp_f.exists()
+
 def test_add_ligand_channel():
     atoms = pl.DataFrame([
         dict(channels=[],    is_polymer=False),
