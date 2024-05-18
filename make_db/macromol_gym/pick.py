@@ -288,7 +288,10 @@ def pick_training_zones(
             memento=_load_memento(db),
             progress_factory=progress_factory,
     )
-    _delete_memento(db)
+
+    with db:
+        _create_indices(db)
+        _delete_memento(db)
 
 def load_neighbors(db, geometry, distance_A):
     neighbors = select_neighbors(db)
@@ -652,6 +655,12 @@ def _load_memento(db):
 
 def _delete_memento(db):
     delete_metadatum(db, 'census_memento')
+
+def _create_indices(db):
+    db.execute('''\
+            CREATE INDEX zone_neighbor_zone_id
+            ON zone_neighbor (zone_id)
+    ''')
 
 
 if __name__ == '__main__':

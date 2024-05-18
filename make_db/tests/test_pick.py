@@ -50,6 +50,18 @@ def atoms(params):
             },
     )
 
+def assert_index_exists(db, table, col):
+    cur = db.execute('''\
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'index' AND tbl_name=?
+    ''', [table])
+    rows = cur.fetchall()
+    assert len(rows) == 1
+
+    sql, = rows[0]
+    assert f'({col})' in sql
+
 
 @pff.parametrize(
         schema=pff.cast(
@@ -342,6 +354,8 @@ def test_pick_training_zones_1ypi_2ypi_3ypi():
     # else that would be robust to small changes in the code.
     assert mmg.select_structures(train_db) == ['1ypi', '2ypi']
 
+    assert_index_exists(train_db, 'zone_neighbor', 'zone_id')
+
 def test_pick_training_zones_7spt_1c58():
     # 7spt is a structure of a glucose transporter.  It contains a number of 
     # non-specific ligands (specifically 1-oleoyl-R-glycerol, a.k.a. OLC) which 
@@ -441,6 +455,8 @@ def test_pick_training_zones_7spt_1c58():
             'SELECT pdb_id_1, pdb_id_2 FROM subchain_pair',
     )
     assert set(subchain_pairs.iter_rows()) == {('A', 'E')}
+
+    assert_index_exists(train_db, 'zone_neighbor', 'zone_id')
 
 def test_load_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
