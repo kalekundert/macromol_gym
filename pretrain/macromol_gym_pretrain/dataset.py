@@ -70,20 +70,21 @@ def image_from_atoms(atoms, img_params):
     def assign_channels(atoms):
         channels = img_params.element_channels
         atoms = mmvox.set_atom_channels_by_element(atoms, channels)
+        atoms = mmvox.set_atom_radius_A(atoms, img_params.atom_radius_A)
 
         if img_params.ligand_channel:
             atoms = add_ligand_channel(atoms, len(channels))
 
         return atoms
 
-    atoms = mmvox.set_atom_radius_A(atoms, img_params.atom_radius_A)
     mmvox_img_params = mmvox.ImageParams(
             channels=(
                 len(img_params.element_channels)
                 + img_params.ligand_channel
             ),
             grid=img_params.grid,
-            assign_channels=assign_channels,
+            process_filtered_atoms=assign_channels,
+            max_radius_A=img_params.atom_radius_A,
     )
     return mmvox.image_from_atoms(atoms, mmvox_img_params)
 
