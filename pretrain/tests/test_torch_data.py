@@ -29,7 +29,7 @@ def test_cnn_neighbor_dataset_pickle(tmp_path):
                     resolution_A=1,
                 ),
                 atom_radius_A=0.5,
-                element_channels=['C', 'N', 'O', '.*'],
+                element_channels=[['C'], ['N'], ['O'], ['*']],
                 ligand_channel=True,
             ),
     )

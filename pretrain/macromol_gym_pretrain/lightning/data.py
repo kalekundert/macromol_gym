@@ -70,8 +70,15 @@ class CnnNeighborDataModule(L.LightningDataModule):
         }
         num_workers = get_num_workers(num_workers)
 
-        def make_dataloader(split, sampler=None):
-            log.info("making dataloader: split=%s num_workers=%d", split, num_workers)
+        def make_dataloader(split, epoch_size):
+            log.info("configure dataloader: split=%s num_workers=%d", split, num_workers)
+
+            sampler = InfiniteSampler(
+                    epoch_size or len(datasets[split]),
+                    shuffle=True,
+                    shuffle_size=len(datasets[split]),
+                    increment_across_epochs=(split == 'train'),
+            )
 
             return DataLoader(
                     dataset=datasets[split],
@@ -91,26 +98,9 @@ class CnnNeighborDataModule(L.LightningDataModule):
                     drop_last=True,
             )
 
-        self._train_dataloader = make_dataloader(
-                split='train',
-                sampler=InfiniteSampler(
-                    train_epoch_size or len(datasets['train']),
-                ),
-        )
-        self._val_dataloader = make_dataloader(
-                split='val',
-                sampler=InfiniteSampler(
-                    val_epoch_size or len(datasets['val']),
-                    increment_across_epochs=False,
-                ),
-        )
-        self._test_dataloader = make_dataloader(
-                split='test',
-                sampler=InfiniteSampler(
-                    test_epoch_size or len(datasets['test']),
-                    increment_across_epochs=False,
-                ),
-        )
+        self._train_dataloader = make_dataloader('train', train_epoch_size)
+        self._val_dataloader = make_dataloader('val', val_epoch_size)
+        self._test_dataloader = make_dataloader('test', test_epoch_size)
 
     def train_dataloader(self):
         return self._train_dataloader
