@@ -25,6 +25,7 @@ dependencies = [
   'reprfunc',
   'scipy',
   'torch',
+  'xxhash',
 ]
 
 [project.optional-dependencies]

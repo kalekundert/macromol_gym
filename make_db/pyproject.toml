@@ -30,6 +30,7 @@ dependencies = [
   'scikit-learn',
   'scipy',
   'tqdm',
+  'xxhash',
 ]
 
 [project.optional-dependencies]

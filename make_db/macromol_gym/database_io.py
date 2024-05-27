@@ -6,7 +6,6 @@ import io
 
 from more_itertools import one, flatten, unique_everseen as unique
 from urllib.request import pathname2url
-from hashlib import md5
 from pathlib import Path
 from textwrap import dedent
 
@@ -19,9 +18,12 @@ from typing import Any, Literal
 # result the query will mysteriously fail.
 
 def hash_db(db_path: str | Path):
-    hash = md5()
-    hash.update(Path(db_path).read_bytes())
-    return hash.hexdigest()
+    import xxhash
+    m = xxhash.xxh3_64()
+    with open(db_path, 'rb') as f:
+        while chunk := f.read(2**20):
+            m.update(chunk)
+    return m.hexdigest()
 
 def open_db(path: str | Path, mode: Literal['ro', 'rw', 'rwc'] = 'ro'):
     """
