@@ -9,11 +9,13 @@ from pymol import cmd
 from pymol.wizard import Wizard
 from macromol_gym_pretrain.database_io import (
         open_db, select_zone_ids, select_zone_pdb_ids, select_zone_atoms, 
+        select_split,
 )
 from macromol_gym_pretrain.dataset import (
         NeighborParams, get_neighboring_frames,
 )
 from macromol_gym_pretrain.geometry import cube_faces
+from macromol_gym_pretrain.torch.data import InfiniteSampler
 from macromol_voxelize import (
         ImageParams, Grid, 
         set_atom_radius_A, set_atom_channels_by_element,
@@ -36,17 +38,17 @@ class TrainingExamples(Wizard):
             length_voxels=24,
             resolution_A=1,
             atom_radius_A=None,
-            channel_regexps=['C', 'N', 'O', '.*'],
+            channels=[['C'], ['N'], ['O'], ['*']],
             distance_A=30,
             noise_max_distance_A=2,
             noise_max_angle_deg=10,
             show_voxels=True,
-            initial_zone_id=None,
+            split='train',
     ):
         super().__init__()
 
         self.db = open_db(db_path)
-        self.zone_ids = select_zone_ids(self.db)
+        self.zone_ids = select_split(self.db, split)
         self.neighbor_params = NeighborParams(
                 direction_candidates=cube_faces(),
                 distance_A=distance_A,
@@ -59,20 +61,20 @@ class TrainingExamples(Wizard):
                     length_voxels=length_voxels,
                     resolution_A=resolution_A,
                 ),
-                channels=len(channel_regexps),
+                channels=len(channels),
         )
         self.atom_radius_A = atom_radius_A or resolution_A / 2
-        self.channel_regexps = channel_regexps
+        self.channels = channels
         self.show_voxels = show_voxels
 
-        # Temporary solution; better to use `InfiniteSampler`.
-        rng = np.random.default_rng(0)
-        rng.shuffle(self.zone_ids)
+        sampler = InfiniteSampler(
+                len(self.zone_ids),
+                shuffle=True,
+        )
+        self.zone_order = list(sampler)
 
-        if initial_zone_id is None:
-            self.i = 0
-        else:
-            self.i = self.zone_ids.index(initial_zone_id)
+        self.i = 0
+        self.random_seed = 0
 
         self.redraw()
 
@@ -106,7 +108,7 @@ class TrainingExamples(Wizard):
         curr_noise_max_dist_A = self.neighbor_params.noise_max_distance_A
         curr_noise_max_angle_deg = self.neighbor_params.noise_max_angle_deg
 
-        for d in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]:
+        for d in [-10, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 10]:
             menus['distance_A'] += [[
                 1, f'{d:+}A',
                 f'cmd.get_wizard().set_neighbor_distance_A({curr_dist_A + d})'
@@ -123,7 +125,7 @@ class TrainingExamples(Wizard):
         return menus[tag]
 
     def get_prompt(self):
-        return [f"Zone: {self.zone_ids[self.i % len(self.zone_ids)]}"]
+        return [f"Zone: {self.curr_zone_id}"]
 
     def do_key(self, key, x, y, mod):
         # This is <Ctrl-Space>; see `wt_vs_mut` for details.
@@ -140,14 +142,16 @@ class TrainingExamples(Wizard):
 
     def next_training_example(self):
         self.i += 1
+        self.random_seed = 0
         self.redraw()
 
     def prev_training_example(self):
         self.i -= 1
+        self.random_seed = 0
         self.redraw()
 
     def new_random_seed(self):
-        self.i += len(self.zone_ids)
+        self.random_seed += 1
         self.redraw(keep_view=True)
 
     def set_neighbor_distance_A(self, value):
@@ -173,11 +177,12 @@ class TrainingExamples(Wizard):
         # Get the next training example:
         zone_id, frame_ia, frame_ab, b = get_neighboring_frames(
                 self.db,
-                self.i,
+                self.zone_order[self.i] + self.random_seed * len(self.zone_ids),
                 self.zone_ids,
                 self.neighbor_params,
                 self.db_cache,
         )
+        self.curr_zone_id = zone_id
         frame_ib = frame_ab @ frame_ia
 
         # Load the relevant structure:
@@ -212,7 +217,7 @@ class TrainingExamples(Wizard):
         atoms = (
                 select_zone_atoms(self.db, zone_id)
                 | f(set_atom_radius_A, self.atom_radius_A)
-                | f(set_atom_channels_by_element, self.channel_regexps, first_match=True)
+                | f(set_atom_channels_by_element, self.channels)
         )
         render_view(
                 atoms_i=atoms,
@@ -221,7 +226,7 @@ class TrainingExamples(Wizard):
                 frame_ix=frame_ia,
                 channel_colors=pick_channel_colors(
                     'sele_a',
-                    self.channel_regexps,
+                    self.channels,
                 ),
                 obj_names=dict(
                     voxels='voxels_a',
@@ -236,7 +241,7 @@ class TrainingExamples(Wizard):
                 frame_ix=frame_ib,
                 channel_colors=pick_channel_colors(
                     'sele_b',
-                    self.channel_regexps,
+                    self.channels,
                 ),
                 obj_names=dict(
                     voxels='voxels_b',
