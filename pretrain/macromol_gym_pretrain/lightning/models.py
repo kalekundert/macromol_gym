@@ -37,22 +37,22 @@ class PredictorModule(L.LightningModule):
         loss = self.loss(y_hat, y)
         acc = self.accuracy(y_hat, y)
 
-        return loss, acc
+        return y_hat, loss, acc
 
     def training_step(self, batch, _):
-        loss, acc = self.forward(batch)
+        _, loss, acc = self.forward(batch)
         self.log('train/loss', loss, on_epoch=True)
         self.log('train/accuracy', acc, on_epoch=True)
         return loss
 
     def validation_step(self, batch, _):
-        loss, acc = self.forward(batch)
+        _, loss, acc = self.forward(batch)
         self.log('val/loss', loss)
         self.log('val/accuracy', acc)
         return loss
 
     def test_step(self, batch, _):
-        loss, acc = self.forward(batch)
+        _, loss, acc = self.forward(batch)
         self.log('test/loss', loss)
         self.log('test/accuracy', acc)
         return loss
