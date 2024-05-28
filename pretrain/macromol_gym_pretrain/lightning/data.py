@@ -10,6 +10,7 @@ from ..geometry import cube_faces
 from torch.utils.data import DataLoader
 
 from typing import Optional
+from numpy.typing import ArrayLike
 
 log = logging.getLogger('macromol_gym_pretrain')
 
@@ -31,6 +32,8 @@ class CnnNeighborDataModule(L.LightningDataModule):
             atom_radius_A: Optional[float] = None,
             element_channels: list[str],
             ligand_channel: bool,
+            normalize_mean: ArrayLike = 0,
+            normalize_std: ArrayLike = 1,
 
             # Data loader parameters
             batch_size: int,
@@ -64,6 +67,8 @@ class CnnNeighborDataModule(L.LightningDataModule):
                         atom_radius_A=atom_radius_A,
                         element_channels=element_channels,
                         ligand_channel=ligand_channel,
+                        normalize_mean=normalize_mean,
+                        normalize_std=normalize_std,
                     ),
                 )
                 for split in ['train', 'val', 'test']

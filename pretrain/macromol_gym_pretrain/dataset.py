@@ -22,7 +22,7 @@ from itertools import product
 from math import radians
 
 from typing import Any, Callable, Optional
-from numpy.typing import NDArray
+from numpy.typing import NDArray, ArrayLike
 
 log = logging.getLogger('macromol_gym_pretrain')
 
@@ -39,6 +39,8 @@ class ImageParams:
     atom_radius_A: Optional[float]
     element_channels: list[str]
     ligand_channel: bool
+    normalize_mean: ArrayLike = 0
+    normalize_std: ArrayLike = 1
 
 @contextmanager
 def copy_db_to_local_drive(src_path, dest_path):
@@ -86,7 +88,11 @@ def image_from_atoms(atoms, img_params):
             process_filtered_atoms=assign_channels,
             max_radius_A=img_params.atom_radius_A,
     )
-    return mmvox.image_from_atoms(atoms, mmvox_img_params)
+    img = mmvox.image_from_atoms(atoms, mmvox_img_params)
+
+    normalize_image(img, img_params.normalize_mean, img_params.normalize_std)
+
+    return img
 
 def add_ligand_channel(atoms, channel):
     ligand_channel = (
@@ -97,6 +103,18 @@ def add_ligand_channel(atoms, channel):
     return atoms.with_columns(
             channels=pl.col('channels').list.concat(ligand_channel)
     )
+
+def normalize_image(img, mean, std):
+    # I haven't actually done any benchmarking, but this post [1] suggests that 
+    # in-place operations are ≈2-3x faster for arrays with >10K elements.  For 
+    # reference, a 21x21x21 image with 6 channels would have 55K voxels.
+    #
+    # [1]: https://stackoverflow.com/questions/57024802/numpy-in-place-operation-performance
+
+    if mean != 0:
+        img -= np.asarray(mean).reshape(-1, 1, 1, 1)
+    if std != 1:
+        img /= np.asarray(std).reshape(-1, 1, 1, 1)
 
 def get_neighboring_frames(db, i, zone_ids, neighbor_params, db_cache):
     # Nomenclature

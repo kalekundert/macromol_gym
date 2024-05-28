@@ -2,8 +2,9 @@ import macromol_gym_pretrain as mmgp
 import macromol_gym_pretrain.dataset as _mmgp
 import polars as pl
 import numpy as np
+import parametrize_from_file as pff
 
-from param_helpers import make_db
+from param_helpers import make_db, image, with_np
 from scipy.stats import ks_1samp
 from macromol_dataframe import transform_coords, invert_coord_frame
 from itertools import combinations
@@ -81,6 +82,18 @@ def test_add_ligand_channel():
         dict(channels=[1,2],   is_polymer=True),
         dict(channels=[0,1,2], is_polymer=True),
     ]
+
+@pff.parametrize(
+        schema=pff.cast(
+            img=image,
+            mean=with_np.eval,
+            std=with_np.eval,
+            expected=image,
+        )
+)
+def test_normalize_image(img, mean, std, expected):
+    mmgp.normalize_image(img, mean, std)
+    assert img == approx(expected)
 
 def test_get_neighboring_frames():
     # Sample random coordinate frames, but make sure in each case that the 
