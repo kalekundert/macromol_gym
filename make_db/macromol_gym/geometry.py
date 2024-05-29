@@ -23,13 +23,15 @@ def tetrahedron_faces():
 
 @functools.cache
 def cube_faces():
+    # I chose the order of these coordinates in order to match the original 
+    # atompaint dataset.  That's why they're a bit "out of order".
     return np.array([
-        [ 1,  0,  0],
-        [-1,  0,  0],
         [ 0,  1,  0],
         [ 0, -1,  0],
-        [ 0,  0,  1],
+        [ 1,  0,  0],
+        [-1,  0,  0],
         [ 0,  0, -1],
+        [ 0,  0,  1],
     ])
 
 @functools.cache
