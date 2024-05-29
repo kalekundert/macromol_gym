@@ -4,10 +4,9 @@ import numpy as np
 import logging
 import tempfile
 import shutil
-import os
 
 from .database_io import (
-        hash_db, select_metadatum, select_neighbors,
+        select_metadatum, select_neighbors,
         select_zone_center_A, select_zone_neighbors
 )
 from macromol_dataframe import (
@@ -43,24 +42,11 @@ class ImageParams:
     normalize_std: ArrayLike = 1
 
 @contextmanager
-def copy_db_to_local_drive(src_path, dest_path):
-    src_path = Path(src_path)
-    dest_path = Path(dest_path)
+def copy_db_to_tmp(src_path, dest_name='db.sqlite', noop=False):
+    if noop:
+        yield Path(src_path)
+        return
 
-    log.info("copy database to local drive: src=%s dest=%s", src_path, dest_path)
-
-    if dest_path.exists() and hash_db(src_path) == hash_db(dest_path):
-        yield
-
-    else:
-        try:
-            shutil.copy(src_path, dest_path)
-            yield
-        finally:
-            os.unlink(dest_path)
-
-@contextmanager
-def copy_db_to_tmp(src_path, dest_name='db.sqlite'):
     with tempfile.TemporaryDirectory(prefix='macromol_gym_') as d:
         dest_path = Path(d) / dest_name
         log.info("copy database to local drive: src=%s dest=%s", src_path, dest_path)
