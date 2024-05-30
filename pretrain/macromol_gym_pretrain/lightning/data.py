@@ -40,6 +40,7 @@ class CnnNeighborDataModule(L.LightningDataModule):
             train_epoch_size: Optional[int] = None,
             val_epoch_size: Optional[int] = None,
             test_epoch_size: Optional[int] = None,
+            identical_epochs: bool = False,
             num_workers: Optional[int] = None,
     ):
         super().__init__()
@@ -82,7 +83,9 @@ class CnnNeighborDataModule(L.LightningDataModule):
                     epoch_size or len(datasets[split]),
                     shuffle=True,
                     shuffle_size=len(datasets[split]),
-                    increment_across_epochs=(split == 'train'),
+                    increment_across_epochs=(
+                        (split == 'train') and (not identical_epochs)
+                    ),
             )
 
             return DataLoader(
