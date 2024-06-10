@@ -129,6 +129,14 @@ def init_db(db):
                 neighbor_id INTEGER NOT NULL REFERENCES neighbor(id)
             )
     ''')
+    cur.execute('''\
+            CREATE TABLE IF NOT EXISTS curriculum (
+                zone_id INTEGER NOT NULL REFERENCES zone(id),
+                random_seed INTEGER NOT NULL,
+                difficulty REAL NOT NULL,
+                UNIQUE (zone_id, random_seed)
+            )
+    ''')
 
 
 def upsert_metadata(db, metadata: dict[str, Any]):
@@ -245,6 +253,13 @@ def insert_neighbors(db, offsets_A):
             list(enumerate(offsets_A)),
     )
 
+def insert_curriculum(db, zone_ids, random_seeds, difficulty):
+    params = zip(zone_ids, random_seeds, difficulty, strict=True)
+    db.executemany('''\
+            INSERT INTO curriculum (zone_id, random_seed, difficulty)
+            VALUES (?, ?, ?)
+    ''', params)
+
 
 def select_metadata(db, keys):
     placeholders = ', '.join(['?'] * len(keys))
@@ -348,6 +363,11 @@ def select_neighbors(db):
         offset_A
         for _, offset_A in sorted(rows)
     ])
+
+def select_max_curriculum_seed(db, default=0):
+    cur = db.execute('SELECT MAX(random_seed) FROM curriculum')
+    cur.row_factory = _scalar_row_factory
+    return cur.fetchone() or default
     
 def select_dataframe(db, query):
     cur = db.execute(query)

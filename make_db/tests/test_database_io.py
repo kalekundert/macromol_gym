@@ -1,5 +1,6 @@
 import macromol_gym as mmg
 import polars as pl
+import polars.testing
 import numpy as np
 import sqlite3
 import pytest
@@ -176,3 +177,44 @@ def test_splits():
 
     assert list(mmg.select_split(db, 'train')) == [zone_ids[0], zone_ids[1]]
     assert list(mmg.select_split(db, 'val')) == [zone_ids[2]]
+
+def test_curriculum():
+    db = mmg.open_db(':memory:', mode='rwc')
+    mmg.init_db(db)
+
+    with db:
+        struct_ids = [
+                mmg.insert_structure(db, '1abc', model_id='1'),
+                mmg.insert_structure(db, '2abc', model_id='1'),
+        ]
+        assembly_ids = [
+                mmg.insert_assembly(db, struct_id, '1', pl.DataFrame())
+                for struct_id in struct_ids
+        ]
+        zone_ids = [
+                mmg.insert_zone(
+                    db, assembly_id,
+                    center_A=np.zeros(3),
+                    neighbor_ids=[],
+                )
+                for assembly_id in assembly_ids
+        ]
+
+        assert mmg.select_max_curriculum_seed(db) == 0
+        mmg.insert_curriculum(
+                db,
+                zone_ids + zone_ids,
+                [1,2,3,4],
+                [0.9, 0.7, 0.8, 0.6],
+        )
+        assert mmg.select_max_curriculum_seed(db) == 4
+
+    curriculum = mmg.select_dataframe(db, 'SELECT * FROM curriculum')
+    expected = pl.DataFrame([
+        dict(zone_id=zone_ids[0], random_seed=1, difficulty=0.9),
+        dict(zone_id=zone_ids[1], random_seed=2, difficulty=0.7),
+        dict(zone_id=zone_ids[0], random_seed=3, difficulty=0.8),
+        dict(zone_id=zone_ids[1], random_seed=4, difficulty=0.6),
+    ])
+
+    pl.testing.assert_frame_equal(curriculum, expected)

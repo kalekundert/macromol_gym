@@ -1,11 +1,11 @@
 import lightning as L
 import macromol_voxelize as mmvox
 import logging
-import os
 
 from ..torch.data import (
         CnnNeighborDataset, NeighborParams, ImageParams, InfiniteSampler,
 )
+from ..dataset import get_num_workers
 from ..geometry import cube_faces
 from torch.utils.data import DataLoader
 
@@ -118,15 +118,6 @@ class CnnNeighborDataModule(L.LightningDataModule):
 
     def test_dataloader(self):
         return self._test_dataloader
-
-def get_num_workers(num_workers: Optional[int]) -> int:
-    if num_workers is not None:
-        return num_workers
-
-    try:
-        return int(os.environ['SLURM_JOB_CPUS_PER_NODE'])
-    except KeyError:
-        return os.cpu_count()
 
 
 

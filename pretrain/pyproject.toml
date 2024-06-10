@@ -28,6 +28,9 @@ dependencies = [
   'xxhash',
 ]
 
+[project.scripts]
+mmg_make_curriculum = 'macromol_gym_pretrain.torch.curriculum:main'
+
 [project.optional-dependencies]
 test = [
   'pytest',

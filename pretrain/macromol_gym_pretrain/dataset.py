@@ -4,6 +4,7 @@ import numpy as np
 import logging
 import tempfile
 import shutil
+import os
 
 from .database_io import (
         select_metadatum, select_neighbors,
@@ -52,6 +53,15 @@ def copy_db_to_tmp(src_path, dest_name='db.sqlite', noop=False):
         log.info("copy database to local drive: src=%s dest=%s", src_path, dest_path)
         shutil.copy(src_path, dest_path)
         yield dest_path
+
+def get_num_workers(num_workers: Optional[int]) -> int:
+    if num_workers is not None:
+        return num_workers
+
+    try:
+        return int(os.environ['SLURM_JOB_CPUS_PER_NODE'])
+    except KeyError:
+        return os.cpu_count()
 
 def image_from_atoms(atoms, img_params):
 
