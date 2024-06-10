@@ -58,13 +58,3 @@ mmg_split_training_examples = 'macromol_gym.split:main'
 addopts = "--ignore=macromol_gym --doctest-modules --doctest-glob='*.rst'"
 doctest_optionflags = 'NORMALIZE_WHITESPACE'
 
-[tool.coverage.run]
-branch = true
-parallel = true
-source = ['macromol_gym']
-
-[tool.coverage.report]
-exclude_lines = [
-    "^\\s*raise AssertionError\\b",
-    "^\\s*raise NotImplementedError\\b",
-]

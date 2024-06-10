@@ -1,0 +1,12 @@
+[run]
+branch = true
+parallel = true
+source = 
+  macromol_gym
+  macromol_gym_pretrain
+
+[report]
+exclude_lines = 
+    ^\\s*raise AssertionError\\b
+    ^\\s*raise NotImplementedError\\b
+
