@@ -324,7 +324,7 @@ def annotate_polymers(asym_atoms, entities):
             entity_id='id',
             is_polymer=pl.col('type') == 'polymer',
     )
-    return asym_atoms.join(polymers, on='entity_id', how='left')
+    return asym_atoms.join(polymers, on='entity_id', how='left', coalesce=True)
 
 def check_elements(
         atoms: Atoms,
