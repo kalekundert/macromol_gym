@@ -2,7 +2,7 @@
 Rank the difficulty of each training example.
 
 Usage:
-    mmg_make_curriculum <db> <script> [-r <reps>] [-b <batch>] [-j <jobs>]
+    mmg_make_curriculum <db> <script> [-r <reps>] [-b <batch>] [-j <jobs>] [-c]
 
 Arguments:
     <db>
@@ -51,6 +51,10 @@ Options:
         The number of data-loading subprocesses to run.  By default, this will 
         be determined either by the `$SLURM_JOB_CPUS_PER_NODE` environment 
         variable, or by the number of available processors.
+
+    -c --copy-to-tmp
+        Copy the database to /tmp before starting.  This can be faster, if the
+        database is stored on a network filesystem.
 
 Description:
     The purpose of this script is to allow hard-to-train models to start on 
@@ -143,10 +147,13 @@ def main():
         import docopt
         args = docopt.docopt(__doc__)
 
+        import logging
+        logging.basicConfig()
+
         import torch
         import sys; sys.path.insert(0, '')
 
-        from ..dataset import get_num_workers
+        from ..dataset import get_num_workers, copy_db_to_tmp
         from ..database_io import open_db, insert_curriculum, select_max_curriculum_seed
         from torch.utils.data import DataLoader
         from pathlib import Path
@@ -155,38 +162,53 @@ def main():
         db_path = Path(args['<db>'])
         script_path = Path(args['<script>'])
 
-        db = open_db(db_path, mode='rw')
-        user_funcs = load_user_funcs(script_path)
-        model = user_funcs['make_model']()
+        with copy_db_to_tmp(
+                db_path,
+                noop=not args['--copy-to-tmp'],
+                write=True,
+        ) as db_path:
 
-        dataset = CurriculumDataset(db_path, script_path)
-        begin_seed = select_max_curriculum_seed(db) + 1
-        end_seed = int(args['--replicates']) * len(dataset)
+            db = open_db(db_path, mode='rw')
+            user_funcs = load_user_funcs(script_path)
+            model = user_funcs['make_model']()
 
-        data_loader = DataLoader(
-                dataset=dataset,
-                sampler=range(begin_seed, end_seed),
-                batch_size=int(args['--batch-size']),
-                num_workers=get_num_workers(maybe_int(args['--num-workers'])),
-                pin_memory=True,
-                drop_last=True,
-                multiprocessing_context='spawn',
-        )
+            dataset = CurriculumDataset(db_path, script_path)
+            begin_seed = select_max_curriculum_seed(db) + 1
+            end_seed = int(args['--replicates']) * len(dataset)
+            batch_size = int(args['--batch-size'])
+            num_workers = get_num_workers(maybe_int(args['--num-workers']))
 
-        for zone_ids, random_seeds, x, y in tqdm(data_loader):
+            data_loader = DataLoader(
+                    dataset=dataset,
+                    sampler=range(begin_seed, end_seed),
+                    batch_size=batch_size,
+                    num_workers=num_workers,
+                    pin_memory=True,
+                    drop_last=True,
+                    multiprocessing_context='spawn',
+            )
+
             if torch.cuda.is_available():
-                x = x.to('cuda')
+                gpu = torch.device("cuda:0")
+                model = model.to(gpu)
 
-            y_hat = model(x)
-            difficulty = calc_error_probability(y, y_hat)
+            for zone_ids, random_seeds, x, y in tqdm(
+                    data_loader,
+                    initial=begin_seed // batch_size,
+            ):
+                if torch.cuda.is_available():
+                    x = x.to(gpu)
 
-            with db:
-                insert_curriculum(
-                        db,
-                        zone_ids.tolist(),
-                        random_seeds.tolist(),
-                        difficulty.tolist(),
-                )
-        
+                y_hat = model(x)
+                difficulty = calc_error_probability(y, y_hat)
+
+                with db:
+                    insert_curriculum(
+                            db,
+                            zone_ids.tolist(),
+                            random_seeds.tolist(),
+                            difficulty.tolist(),
+                    )
+            
     except KeyboardInterrupt:
         print("canceled by user")

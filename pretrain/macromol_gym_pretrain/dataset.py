@@ -43,7 +43,7 @@ class ImageParams:
     normalize_std: ArrayLike = 1
 
 @contextmanager
-def copy_db_to_tmp(src_path, dest_name='db.sqlite', noop=False):
+def copy_db_to_tmp(src_path, dest_name='db.sqlite', write=False, noop=False):
     if noop:
         yield Path(src_path)
         return
@@ -52,7 +52,15 @@ def copy_db_to_tmp(src_path, dest_name='db.sqlite', noop=False):
         dest_path = Path(d) / dest_name
         log.info("copy database to local drive: src=%s dest=%s", src_path, dest_path)
         shutil.copy(src_path, dest_path)
+
+        if not write:
+            dest_path.chmod(0o444)
+
         yield dest_path
+
+        if write:
+            shutil.copy(dest_path, src_path)
+
 
 def get_num_workers(num_workers: Optional[int]) -> int:
     if num_workers is not None:
