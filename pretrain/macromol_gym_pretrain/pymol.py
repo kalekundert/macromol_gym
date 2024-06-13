@@ -43,9 +43,17 @@ class TrainingExamples(Wizard):
             noise_max_distance_A=2,
             noise_max_angle_deg=10,
             show_voxels=True,
+            scale_alpha=False,
             split='train',
     ):
         super().__init__()
+
+        length_voxels = int(length_voxels)
+        resolution_A = float(resolution_A)
+        atom_radius_A = float(atom_radius_A)
+        distance_A = float(distance_A)
+        noise_max_distance_A = float(noise_max_distance_A)
+        noise_max_angle_deg = float(noise_max_angle_deg)
 
         self.db = open_db(db_path)
         self.zone_ids = select_split(self.db, split)
@@ -66,6 +74,7 @@ class TrainingExamples(Wizard):
         self.atom_radius_A = atom_radius_A or resolution_A / 2
         self.channels = channels
         self.show_voxels = show_voxels
+        self.scale_alpha = scale_alpha
 
         sampler = InfiniteSampler(
                 len(self.zone_ids),
@@ -88,6 +97,7 @@ class TrainingExamples(Wizard):
                 [3, f"Noise distance: {self.neighbor_params.noise_max_distance_A}A", 'noise_max_distance_A'],
                 [3, f"Noise angle: {self.neighbor_params.noise_max_angle_deg} deg", 'noise_max_angle_deg'],
                 [3, f"Show voxels: {'yes' if self.show_voxels else 'no'}", 'show_voxels'],
+                [3, f"Scale alpha: {'yes' if self.scale_alpha else 'no'}", 'scale_alpha'],
                 [2, "Done", 'cmd.set_wizard()'],
         ]
         return panel
@@ -101,6 +111,11 @@ class TrainingExamples(Wizard):
                     [2, 'Show voxels', ''],
                     [1, 'yes', 'cmd.get_wizard().set_show_voxels(True)'],
                     [1, 'no', 'cmd.get_wizard().set_show_voxels(False)'],
+                ],
+                'scale_alpha': [
+                    [2, 'Scale alpha', ''],
+                    [1, 'yes', 'cmd.get_wizard().set_scale_alpha(True)'],
+                    [1, 'no', 'cmd.get_wizard().set_scale_alpha(False)'],
                 ],
         }
 
@@ -170,6 +185,10 @@ class TrainingExamples(Wizard):
         self.show_voxels = value
         self.redraw()
 
+    def set_scale_alpha(self, value):
+        self.scale_alpha = value
+        self.redraw()
+
     def redraw(self, keep_view=False):
         if not keep_view:
             cmd.delete('all')
@@ -233,6 +252,7 @@ class TrainingExamples(Wizard):
                     outline='outline_a',
                 ),
                 img=self.show_voxels,
+                scale_alpha=self.scale_alpha,
         )
         render_view(
                 atoms_i=atoms,
@@ -248,6 +268,7 @@ class TrainingExamples(Wizard):
                     outline='outline_b',
                 ),
                 img=self.show_voxels,
+                scale_alpha=self.scale_alpha,
         )
 
         if self.show_voxels:
@@ -257,8 +278,9 @@ class TrainingExamples(Wizard):
             cmd.zoom('sele_a or sele_b', buffer=10)
             cmd.center('sele_a or sele_b')
 
-def mmgp_training_examples(db_path):
-    wizard = TrainingExamples(db_path)
+def mmgp_training_examples(db_path, *args, **kwargs):
+    kwargs.pop('_self', None)
+    wizard = TrainingExamples(db_path, *args, **kwargs)
     cmd.set_wizard(wizard)
 
 pymol.cmd.extend('mmgp_training_examples', mmgp_training_examples)
