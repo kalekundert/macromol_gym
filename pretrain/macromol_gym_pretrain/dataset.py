@@ -36,7 +36,7 @@ class NeighborParams:
 @dataclass
 class ImageParams:
     grid: mmvox.Grid
-    atom_radius_A: Optional[float]
+    atom_radius_A: float
     element_channels: list[str]
     ligand_channel: bool
     normalize_mean: ArrayLike = 0

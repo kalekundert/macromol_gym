@@ -1,10 +1,12 @@
 import torch
 import numpy as np
 
-from ..database_io import open_db, select_split, select_zone_atoms
+from ..database_io import (
+        open_db, select_split, select_zone_atoms, select_curriculum,
+)
 from ..dataset import (
         NeighborParams, ImageParams,
-        get_neighboring_frames, image_from_atoms,
+        get_neighboring_frames, image_from_atoms, log
 )
 from macromol_dataframe import Atoms, transform_atom_coords
 from torch.utils.data import Dataset
@@ -23,9 +25,10 @@ class NeighborDataset(Dataset):
             split: str,
             neighbor_params: NeighborParams,
             input_from_atoms: Callable[[Atoms], Any],
+            max_difficulty: float = 1,
     ):
-        # Don't store a connection to the database in the constructor.  This 
-        # method is called in the parent process, after which the instantiated 
+        # Don't store a connection to the database in the constructor.  The 
+        # constructor runs in the parent process, after which the instantiated 
         # dataset object is sent to the worker process.  If the worker process 
         # was forked, this would cause weird deadlock/race condition problems!
         # If the worker process was spawned, this would require pickling the 
@@ -35,6 +38,14 @@ class NeighborDataset(Dataset):
 
         db = open_db(db_path)
         self.zone_ids = select_split(db, split)
+
+        if max_difficulty < 1:
+            n = len(self.zone_ids)
+            self.zone_ids = _filter_zones_by_curriculum(
+                    self.zone_ids,
+                    select_curriculum(db, max_difficulty),
+            )
+            log.info("remove difficult training examples: split=%s max_difficulty=%s num_examples_before_filter=%d num_examples_after_filter=%d", split, max_difficulty, n, len(self.zone_ids))
 
         self.neighbor_params = neighbor_params
         self.input_from_atoms = input_from_atoms
@@ -72,6 +83,7 @@ class CnnNeighborDataset(NeighborDataset):
             split: str,
             neighbor_params: NeighborParams,
             img_params: ImageParams,
+            max_difficulty: float = 1,
     ):
         # This class is slightly opinionated about how images should be 
         # created.  This allows it to provide a simple---but not fully 
@@ -86,6 +98,7 @@ class CnnNeighborDataset(NeighborDataset):
                     image_from_atoms,
                     img_params=img_params,
                 ),
+                max_difficulty=max_difficulty,
         )
 
 class InfiniteSampler:
@@ -180,6 +193,9 @@ class InfiniteSampler:
 
     __repr__ = repr_from_init
 
+def _filter_zones_by_curriculum(zone_ids, curriculum):
+    mask = np.isin(zone_ids, curriculum)
+    return zone_ids[mask]
 
 def _iter_shuffled_indices(rng_factory, n, i, j):
     while True:

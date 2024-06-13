@@ -290,11 +290,22 @@ def select_split(db, split):
             JOIN structure ON structure.id = assembly.struct_id
             JOIN split ON split.id = structure.split_id
             WHERE split.name = ?
+            ORDER BY zone.id
     ''', [split])
     cur.row_factory = _scalar_row_factory
     return np.array(cur.fetchall())
 
 def select_zone_ids(db):
+    """
+    Return a list of every zone id in the database.
+
+    .. warning::
+        
+        Don't use this function during training.  For one thing, it doesn't 
+        distinguish between the different splits (e.g. train/test/validation).  
+        For another, it isn't guaranteed to return the zone in any particular 
+        order, which could lead to non-deterministic behavior.
+    """
     cur = db.execute('SELECT zone.id FROM zone')
     cur.row_factory = _scalar_row_factory
     return cur.fetchall()
@@ -363,6 +374,19 @@ def select_neighbors(db):
         offset_A
         for _, offset_A in sorted(rows)
     ])
+
+def select_curriculum(db, max_difficulty):
+    cur = db.execute('''\
+            SELECT zone_id
+            FROM (
+                SELECT zone_id, AVG(difficulty) AS difficulty
+                FROM curriculum
+                GROUP BY zone_id
+            )
+            WHERE difficulty < ?
+    ''', [max_difficulty])
+    cur.row_factory = _scalar_row_factory
+    return np.array(cur.fetchall())
 
 def select_max_curriculum_seed(db, default=0):
     cur = db.execute('SELECT MAX(random_seed) FROM curriculum')

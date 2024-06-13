@@ -2,6 +2,7 @@ import macromol_gym as mmg
 import polars as pl
 import polars.testing
 import numpy as np
+import numpy.testing
 import sqlite3
 import pytest
 
@@ -205,16 +206,20 @@ def test_curriculum():
                 db,
                 zone_ids + zone_ids,
                 [1,2,3,4],
-                [0.9, 0.7, 0.8, 0.6],
+                [0.2, 0.3, 0.6, 0.7],
         )
         assert mmg.select_max_curriculum_seed(db) == 4
 
     curriculum = mmg.select_dataframe(db, 'SELECT * FROM curriculum')
     expected = pl.DataFrame([
-        dict(zone_id=zone_ids[0], random_seed=1, difficulty=0.9),
-        dict(zone_id=zone_ids[1], random_seed=2, difficulty=0.7),
-        dict(zone_id=zone_ids[0], random_seed=3, difficulty=0.8),
-        dict(zone_id=zone_ids[1], random_seed=4, difficulty=0.6),
+        dict(zone_id=zone_ids[0], random_seed=1, difficulty=0.2),
+        dict(zone_id=zone_ids[1], random_seed=2, difficulty=0.3),
+        dict(zone_id=zone_ids[0], random_seed=3, difficulty=0.6),
+        dict(zone_id=zone_ids[1], random_seed=4, difficulty=0.7),
     ])
 
     pl.testing.assert_frame_equal(curriculum, expected)
+    np.testing.assert_equal(
+            mmg.select_curriculum(db, 0.45),
+            np.array([zone_ids[0]]),
+    )

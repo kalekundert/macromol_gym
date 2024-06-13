@@ -35,6 +35,9 @@ class CnnNeighborDataModule(L.LightningDataModule):
             normalize_mean: ArrayLike = 0,
             normalize_std: ArrayLike = 1,
 
+            # Curriculum parameters
+            max_difficulty: float = 1,
+
             # Data loader parameters
             batch_size: int,
             train_epoch_size: Optional[int] = None,
@@ -57,6 +60,7 @@ class CnnNeighborDataModule(L.LightningDataModule):
                 split: CnnNeighborDataset(
                     db_path=db_path,
                     split=split,
+                    max_difficulty=max_difficulty if split == 'train' else 1,
                     neighbor_params=NeighborParams(
                         direction_candidates=cube_faces(),
                         distance_A=grid.length_A + neighbor_padding_A,
