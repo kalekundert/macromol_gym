@@ -1,0 +1,53 @@
+[build-system]
+requires = ['setuptools']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'macromol_gym_unsupervised'
+authors = [
+  {name = 'Kale Kundert', email = 'kale@thekunderts.net'},
+]
+readme = 'README.md'
+description = "An unsupervised macromolecular coordinate dataset"
+classifiers = [
+  'Programming Language :: Python :: 3',
+  'License :: OSI Approved :: MIT License',
+]
+dynamic = ['version']
+requires-python = '~=3.10'
+dependencies = [
+  'lightning',
+  'macromol_dataframe',
+  'macromol_voxelize',
+  'more_itertools',
+  'numpy',
+  'pipeline_func',
+  'reprfunc',
+  'scipy',
+  'torch',
+  'xxhash',
+]
+
+[project.optional-dependencies]
+test = [
+  'pytest',
+  'parametrize_from_file',
+  'pytest_unordered',
+  'pytest_tmp_files',
+  'hypothesis',
+]
+
+[project.urls]
+'Documentation' = 'https://macromol-gym.readthedocs.io/en/latest/'
+'Version Control' = 'https://github.com/kalekundert/macromol_gym'
+'Bug Tracker' = 'https://github.com/kalekundert/macromol_gym/issues'
+'Continuous Integration' = 'https://github.com/kalekundert/macromol_gym/actions'
+'Test Coverage' = 'https://coveralls.io/github/kalekundert/macromol_gym'
+
+[tool.setuptools.dynamic]
+version = {attr = "macromol_gym_unsupervised.__version__"}
+
+[tool.pytest.ini_options]
+addopts = "--ignore=macromol_gym_unsupervised --doctest-modules --doctest-glob='*.rst'"
+doctest_optionflags = 'NORMALIZE_WHITESPACE'
+

@@ -1,11 +1,6 @@
 import macromol_gym_pretrain as mmgp
 import polars as pl
 import numpy as np
-import parametrize_from_file as pff
-
-with_py = pff.Namespace()
-with_math = pff.Namespace('from math import *')
-with_np = pff.Namespace('import numpy as np')
 
 def make_db(path=':memory:', *, split='train'):
     db = mmgp.open_db(path, mode='rwc')
@@ -59,16 +54,4 @@ def make_db(path=':memory:', *, split='train'):
         mmgp.update_splits(db, {'1abc': split, '2abc': split})
 
     return db, zone_ids, zone_centers_A, zone_size_A
-
-def image(params):
-    shape = tuple(int(x) for x in params['shape'].split())
-    img = np.zeros(shape)
-
-    for k, v in params.get('voxels', {}).items():
-        i = tuple(int(x) for x in k.split())
-        img[i] = float(v)
-
-    return img
-
-
 

@@ -5,7 +5,7 @@ import logging
 from ..torch.data import (
         CnnNeighborDataset, NeighborParams, ImageParams, InfiniteSampler,
 )
-from ..dataset import get_num_workers
+from ..utils import get_num_workers
 from ..geometry import cube_faces
 from torch.utils.data import DataLoader
 
@@ -22,11 +22,13 @@ class CnnNeighborDataModule(L.LightningDataModule):
             *,
 
             # Neighbor parameters
-            neighbor_padding_A: float,
+            neighbor_padding_A: Optional[float] = None,
+            neighbor_distance_A: Optional[float] = None,
             noise_max_distance_A: float,
             noise_max_angle_deg: float,
 
             # Image parameters
+            direction_candidates: ArrayLike = cube_faces(),
             grid_length_voxels: int,
             grid_resolution_A: float,
             atom_radius_A: Optional[float] = None,
@@ -49,21 +51,29 @@ class CnnNeighborDataModule(L.LightningDataModule):
         super().__init__()
         self.save_hyperparameters()
 
-        if atom_radius_A is None:
-            atom_radius_A = grid_resolution_A / 2
-
         grid = mmvox.Grid(
                 length_voxels=grid_length_voxels,
                 resolution_A=grid_resolution_A,
         )
+
+        if neighbor_padding_A and neighbor_distance_A:
+            raise ValueError("must not specify both `neighbor_padding_A` and `neighbor_distance_A`")
+        elif neighbor_padding_A is None and neighbor_distance_A is None:
+            raise ValueError("must specify either `neighbor_padding_A` or `neighbor_distance_A`")
+        elif neighbor_padding_A is not None:
+            neighbor_distance_A = grid.length_A + neighbor_padding_A
+
+        if atom_radius_A is None:
+            atom_radius_A = grid_resolution_A / 2
+
         datasets = {
                 split: CnnNeighborDataset(
                     db_path=db_path,
                     split=split,
                     max_difficulty=max_difficulty if split == 'train' else 1,
                     neighbor_params=NeighborParams(
-                        direction_candidates=cube_faces(),
-                        distance_A=grid.length_A + neighbor_padding_A,
+                        direction_candidates=direction_candidates,
+                        distance_A=neighbor_distance_A,
                         noise_max_distance_A=noise_max_distance_A,
                         noise_max_angle_deg=noise_max_angle_deg,
                     ),

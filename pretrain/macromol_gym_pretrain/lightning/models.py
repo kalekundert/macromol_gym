@@ -6,13 +6,13 @@ from torchmetrics import Accuracy
 
 class PredictorModule(L.LightningModule):
 
-    def __init__(self, model, opt_factory):
+    def __init__(self, model, opt_factory, num_classes=6):
         super().__init__()
         self.save_hyperparameters(ignore='model')
 
         self.model = model
         self.loss = CrossEntropyLoss()
-        self.accuracy = Accuracy(task='multiclass', num_classes=6)
+        self.accuracy = Accuracy(task='multiclass', num_classes=num_classes)
         self.optimizer = opt_factory(model.parameters())
 
     @classmethod

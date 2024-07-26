@@ -50,7 +50,7 @@ class TrainingExamples(Wizard):
 
         length_voxels = int(length_voxels)
         resolution_A = float(resolution_A)
-        atom_radius_A = float(atom_radius_A)
+        atom_radius_A = float(atom_radius_A) if atom_radius_A else None
         distance_A = float(distance_A)
         noise_max_distance_A = float(noise_max_distance_A)
         noise_max_angle_deg = float(noise_max_angle_deg)

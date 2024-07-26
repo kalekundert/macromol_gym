@@ -4,14 +4,10 @@ import macromol_voxelize as mmvox
 import torch.testing
 import numpy as np
 import numpy.testing
-import parametrize_from_file as pff
 import pickle
 
 from param_helpers import make_db
 from pipeline_func import f
-
-with_py = pff.Namespace()
-with_mmgp = pff.Namespace('from macromol_gym_pretrain.torch import *')
 
 def test_cnn_neighbor_dataset_pickle(tmp_path):
     db_path = tmp_path / 'db.sqlite'
@@ -47,20 +43,6 @@ def test_cnn_neighbor_dataset_pickle(tmp_path):
 
     torch.testing.assert_close(img, img_pickle)
     assert b == b_pickle
-
-@pff.parametrize(
-        schema=pff.cast(
-            sampler=with_mmgp.eval,
-            expected_len=with_py.eval,
-            expected_iter=with_py.eval,
-        ),
-)
-def test_infinite_sampler(sampler, expected_len, expected_iter):
-    assert len(sampler) == expected_len
-
-    for i, indices in enumerate(expected_iter):
-        sampler.set_epoch(i)
-        assert list(sampler) == list(indices)
 
 def test_filter_zones_by_curriculum():
     zone_ids = np.array([1, 2, 4, 5, 6])

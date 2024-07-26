@@ -35,10 +35,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ./make_db[test]
           python -m pip install -e ./pretrain[test]
+          python -m pip install -e ./unsupervised[test]
           python -m pip install coverage[toml]
       - name: Run test suite
         run: |
-          python -m coverage run -m pytest
+          python -m coverage run -m pytest make_db/tests
+          python -m coverage run -m pytest pretrain/tests
+          python -m coverage run -m pytest unsupervised/tests
       - name: Store coverage data
         uses: actions/upload-artifact@v4
         with:
