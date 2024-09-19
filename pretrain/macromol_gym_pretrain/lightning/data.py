@@ -2,9 +2,8 @@ import lightning as L
 import macromol_voxelize as mmvox
 import logging
 
-from ..torch.data import (
-        CnnNeighborDataset, NeighborParams, ImageParams, InfiniteSampler,
-)
+from ..torch.data import CnnNeighborDataset, NeighborParams, ImageParams
+from ..torch.infinite_sampler import InfiniteSampler
 from ..utils import get_num_workers
 from ..geometry import cube_faces
 from torch.utils.data import DataLoader
