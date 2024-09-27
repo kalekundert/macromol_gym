@@ -11,11 +11,11 @@ from macromol_gym_pretrain.database_io import (
         open_db, select_zone_ids, select_zone_pdb_ids, select_zone_atoms, 
         select_split,
 )
-from macromol_gym_pretrain.dataset import (
+from macromol_gym_pretrain.neighbors import (
         NeighborParams, get_neighboring_frames,
 )
 from macromol_gym_pretrain.geometry import cube_faces
-from macromol_gym_pretrain.torch.data import InfiniteSampler
+from macromol_gym_pretrain.torch.infinite_sampler import InfiniteSampler
 from macromol_voxelize import (
         ImageParams, Grid, 
         set_atom_radius_A, set_atom_channels_by_element,
