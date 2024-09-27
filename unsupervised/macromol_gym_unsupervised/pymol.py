@@ -1,6 +1,7 @@
 import pymol
 import macromol_gym_unsupervised as mmgu
 import macromol_dataframe as mmdf
+import numpy as np
 import os
 
 from pymol import cmd
@@ -34,7 +35,8 @@ class TrainingExamples(Wizard):
                 float(atom_radius_A) if atom_radius_A else
                 self.resolution_A / 2
         )
-        self.channels = [['C'], ['N'], ['O'], ['*']]
+        #self.channels = [['C'], ['N'], ['O'], ['*']]
+        self.channels = [['C'], ['N'], ['O'], ['P'], ['S','SE'], ['*']]
         self.show_voxels = True
         self.scale_alpha = False
 
@@ -68,6 +70,7 @@ class TrainingExamples(Wizard):
                 [2, f"Atom radius: {self.atom_radius_A}A", 'cmd.get_wizard().start_atom_radius_dialog()'],
                 [3, f"Show voxels: {'yes' if self.show_voxels else 'no'}", 'show_voxels'],
                 [3, f"Scale alpha: {'yes' if self.scale_alpha else 'no'}", 'scale_alpha'],
+                [2, f"Save image: out_{self.curr_zone_id}.npy", 'cmd.get_wizard().save_image()'],
                 [2, "Done", 'cmd.set_wizard()'],
         ]
         return panel
@@ -197,6 +200,11 @@ class TrainingExamples(Wizard):
         self.scale_alpha = value
         self.redraw()
 
+    def save_image(self):
+        npy_path = f'out_{self.curr_zone_id}.npy'
+        np.save(npy_path, self.curr_image)
+        print(f"Image data save to: {npy_path}")
+
     def redraw(self, keep_view=False):
         if not keep_view:
             cmd.delete('all')
@@ -206,6 +214,7 @@ class TrainingExamples(Wizard):
         x = self.dataset[i]
 
         self.curr_zone_id = x['zone_id']
+        self.curr_image = x['image'].detach().numpy()
 
         # Load the relevant structure:
         zone_pdb = select_zone_pdb_ids(self.db, x['zone_id'])
@@ -231,7 +240,7 @@ class TrainingExamples(Wizard):
         )
         if self.show_voxels:
             render_image(
-                    img=x['image'].detach().numpy(),
+                    img=self.curr_image,
                     grid=self.dataset.img_params.grid,
                     frame_xi=mmdf.invert_coord_frame(x['frame_ia']),
                     obj_names=dict(
