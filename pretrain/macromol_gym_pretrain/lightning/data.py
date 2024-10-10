@@ -73,8 +73,8 @@ class CnnNeighborDataModule(L.LightningDataModule):
                     neighbor_params=NeighborParams(
                         direction_candidates=direction_candidates,
                         distance_A=neighbor_distance_A,
-                        noise_max_distance_A=noise_max_distance_A,
-                        noise_max_angle_deg=noise_max_angle_deg,
+                        noise_max_distance_A=noise_max_distance_A if split == 'train' else 0,
+                        noise_max_angle_deg=noise_max_angle_deg if split == 'train' else 0,
                     ),
                     img_params=ImageParams(
                         grid=grid,
