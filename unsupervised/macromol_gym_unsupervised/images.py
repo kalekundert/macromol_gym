@@ -39,11 +39,15 @@ def image_from_atoms(atoms, img_params):
     )
     img = mmvox.image_from_atoms(atoms, mmvox_img_params)
 
-    _normalize_image(img, img_params.normalize_mean, img_params.normalize_std)
+    normalize_image_in_place(
+            img,
+            img_params.normalize_mean,
+            img_params.normalize_std,
+    )
 
     return img
 
-def _normalize_image(img, mean, std):
+def normalize_image_in_place(img, mean, std):
     # I haven't actually done any benchmarking, but this post [1] suggests that 
     # in-place operations are ≈2-3x faster for arrays with >10K elements.  For 
     # reference, a 21x21x21 image with 6 channels would have 55K voxels.
