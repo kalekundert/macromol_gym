@@ -1,4 +1,4 @@
-test_normalize_image:
+test_normalize_image_in_place:
   -
     id: baseline
     img:

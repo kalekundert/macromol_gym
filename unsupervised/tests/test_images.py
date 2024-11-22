@@ -12,7 +12,7 @@ from pytest import approx
             expected=image,
         )
 )
-def test_normalize_image(img, mean, std, expected):
-    _mmgu._normalize_image(img, mean, std)
+def test_normalize_image_in_place(img, mean, std, expected):
+    _mmgu.normalize_image_in_place(img, mean, std)
     assert img == approx(expected)
 
