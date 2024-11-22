@@ -25,12 +25,16 @@ class MacromolDataset(Dataset):
         # was forked, this would cause weird deadlock/race condition problems!
         # If the worker process was spawned, this would require pickling the 
         # connection, which isn't possible.
-        self.db_path = db_path
         self.db = None
+        self.db_path = db_path
+        self.split = split
 
         db = open_db(db_path)
         self.zone_ids = select_split(db, split)
         self.zone_size_A = select_metadatum(db, 'zone_size_A')
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} db={str(self.db_path)!r} split={self.split!r} len={len(self)}>'
 
     def __len__(self):
         return len(self.zone_ids)
