@@ -1,5 +1,6 @@
 import numpy as np
 
+from more_itertools import grouper
 from reprfunc import repr_from_init
 from typing import Callable, Optional
 
@@ -7,6 +8,16 @@ class InfiniteSampler:
     """
     Draw reproducible samples from an infinite map-style dataset, i.e. a 
     dataset that accepts integer indices of any size.
+
+    The typical reason to use this sampler is for deterministic data 
+    augmentations.  Even for a finite dataset, there are typically an infinite 
+    number of augmentations that can be applied.  Tying the specific choice of 
+    augmentation to the index makes it easy to reproduce exact training 
+    examples.  In contrast, if the augmentations are based on a pseudo-random 
+    number generator seed set at the beginning of the training run, specific 
+    training examples can't be reproduced without replaying the whole dataset 
+    up to that point, and possibly taking into account factors such as the 
+    number of dataloader processes.
 
     Arguments:
         epoch_size:
@@ -50,10 +61,39 @@ class InfiniteSampler:
             on.  That said, by default the shuffle size is the same as the 
             epoch size.
 
+        world_size:
+            The number of processes being used for distributed training.  It 
+            should not usually be necessary to specify this argument.  If no 
+            distributed context is detected, this will default to 1.  Otherwise 
+            it will default to the world size indicated by the distributed 
+            context.
+
+        rank:
+            The index number of the current process within the group of 
+            processes being used for distributed training, counting from 0.  It 
+            should not usually be necessary to specify this argument.  If no 
+            distributed context is detected, this will default to 0.  Otherwise 
+            it will default to the rank indicated by the distributed context.
+            
         rng_factory:
             A factory function that creates a random number generator from a 
             given integer seed.  This generator is only used to shuffle the 
             indices, and only then if *shuffle* is enabled.
+
+    This sampler supports distributed sampling.  Specifically, it automatically 
+    detects when it's being used in a distributed context, and ensures that 
+    each process is given a unique set of indices.  It also ensures that each 
+    process is given the same number of indices, to avoid deadlock.
+
+    If you are using the Lightning framework, be aware that its default 
+    behavior is to wrap any custom sampler you use with a `DistributedSampler` 
+    when doing distributed training.  Unfortunately, this wrapper is 
+    implemented in such a way that the same samples will be used for each epoch
+    (i.e. as if `increment_across_epochs` were always False), which largely 
+    defeats the purpose of using `InfiniteSampler`.  Therefore, you must take 
+    care to disable this wrapper via `Trainer(use_distributed_sampler=False)`.  
+    As mentioned above, this sampler natively supports distributed contexts, 
+    and so training will work as expected without the wrapper.
     """
 
     def __init__(
@@ -64,30 +104,44 @@ class InfiniteSampler:
             increment_across_epochs: bool = True,
             shuffle: bool = False,
             shuffle_size: Optional[int] = None,
+            world_size: Optional[int] = None,
+            rank: Optional[int] = None,
             rng_factory: Callable[[int], np.random.Generator] = np.random.default_rng,
     ):
+        import torch.distributed as dist
+
+        if dist.is_available() and dist.is_initialized():
+            if world_size is None:
+                world_size = dist.get_world_size()
+            if rank is None:
+                rank = dist.get_rank()
+
         self.epoch_size = epoch_size
         self.curr_epoch = start_epoch
         self.increment_across_epochs = increment_across_epochs
         self.shuffle = shuffle
         self.shuffle_size = shuffle_size or epoch_size
         self.rng_factory = rng_factory
+        self.world_size = world_size or 1
+        self.rank = rank or 0
 
     def __iter__(self):
         n = self.epoch_size
         i = n * self.curr_epoch
 
         if not self.shuffle:
-            yield from range(i, i+n)
+            indices = range(i, i+n)
         else:
-            yield from _iter_shuffled_indices(
+            indices = _iter_shuffled_indices(
                     self.rng_factory,
                     self.shuffle_size,
                     i, i+n,
             )
 
+        yield from _distribute(indices, self.rank, self.world_size)
+
     def __len__(self):
-        return self.epoch_size
+        return self.epoch_size // self.world_size
 
     def set_epoch(self, epoch: int):
         if self.increment_across_epochs:
@@ -112,3 +166,12 @@ def _iter_shuffled_indices(rng_factory, n, i, j):
         else:
             yield from indices[start:end]
             return
+
+def _distribute(iterable, rank, world_size):
+    # It's important to return the same number of items for each distributed 
+    # process, otherwise the training will deadlock while the processes with 
+    # more items wait for those with fewer to "catch up".
+
+    for group in grouper(iterable, world_size, incomplete='ignore'):
+        yield group[rank]
+

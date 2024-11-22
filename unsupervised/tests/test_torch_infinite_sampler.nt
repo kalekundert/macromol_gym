@@ -58,3 +58,19 @@ test_infinite_sampler:
     expected_iter:
       - 2, 4, 3, 0, 1
       - 2, 4, 3, 0, 1
+  -
+    id: distributed-rank-0
+    # Use a batch size (5) that doesn't even divide between the number of 
+    # processes (2), to make sure that extra items are dropped.
+    sampler: InfiniteSampler(5, world_size=2, rank=0)
+    expected_len: 2
+    expected_iter:
+      - 0, 2
+      - 5, 7
+  -
+    id: distributed-rank-1
+    sampler: InfiniteSampler(5, world_size=2, rank=1)
+    expected_len: 2
+    expected_iter:
+      - 1, 3
+      - 6, 8
