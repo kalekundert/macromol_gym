@@ -9,6 +9,7 @@ from .pick import *
 from .split import *
 from .geometry import *
 from .density import *
+from .cath import *
 from .interpro import *
 
 del main
