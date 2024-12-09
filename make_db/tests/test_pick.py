@@ -13,6 +13,14 @@ from pytest_unordered import unordered
 from pytest_tmp_files import make_files
 from pathlib import Path
 
+CATH_LABELS_SCHEMA = {
+        'pdb_id': str,
+        'chain_id': str,
+        'domain_id': int,
+        'seq_ids': list[int],
+        'cath_label': int,
+}
+
 def atoms(params):
     if re.search(r'.cif(\.gz)?$', params):
         cif_path = Path(__file__).parent / 'pdb' / params
@@ -224,7 +232,143 @@ def test_calc_zone_centers_A(atoms, spacing_A, expected):
 
     assert actual == approx(expected)
 
-def test_pick_training_zones_1ypi_2ypi_3ypi():
+def test_annotate_polymers():
+    asym_atoms = pl.DataFrame([
+        dict(entity_id='1'),
+        dict(entity_id='2'),
+        dict(entity_id='3'),
+        dict(entity_id='4'),
+        dict(entity_id='5'),
+        dict(entity_id='6'),
+        dict(entity_id='7'),
+        dict(entity_id='8'),
+        dict(entity_id='9'),
+        dict(entity_id='10'),
+    ])
+    entities = pl.DataFrame([
+        dict(id='1', type='polymer'),
+        dict(id='2', type='polymer'),
+        dict(id='3', type='polymer'),
+        dict(id='4', type='polymer'),
+        dict(id='5', type='polymer'),
+        dict(id='6', type='polymer'),
+        dict(id='7', type='polymer'),
+        dict(id='8', type='polymer'),
+        dict(id='9', type='non-polymer'),
+        dict(id='10', type='water'),
+    ])
+    polymers = pl.DataFrame([
+        dict(entity_id='1', type='polypeptide(L)'),
+        dict(entity_id='2', type='polypeptide(D)'),
+        dict(entity_id='3', type='polyribonucleotide'),
+        dict(entity_id='4', type='polydeoxyribonucleotide'),
+        dict(entity_id='5', type='polydeoxyribonucleotide/polyribonucleotide hybrid'),
+        dict(entity_id='6', type='cyclic-pseudo-peptide'),
+        dict(entity_id='7', type='peptide nucleic acid'),
+        dict(entity_id='8', type='other'),
+    ])
+    labels = mmg.get_polymer_labels()
+
+    actual_atoms = mmg.annotate_polymers(
+            asym_atoms,
+            entities, 
+            polymers,
+            labels,
+    )
+    expected_atoms = pl.DataFrame([
+        dict(entity_id='1',  is_polymer=True,  polymer_label=0),
+        dict(entity_id='2',  is_polymer=True,  polymer_label=None),
+        dict(entity_id='3',  is_polymer=True,  polymer_label=2),
+        dict(entity_id='4',  is_polymer=True,  polymer_label=1),
+        dict(entity_id='5',  is_polymer=True,  polymer_label=None),
+        dict(entity_id='6',  is_polymer=True,  polymer_label=None),
+        dict(entity_id='7',  is_polymer=True,  polymer_label=None),
+        dict(entity_id='8',  is_polymer=True,  polymer_label=None),
+        dict(entity_id='9',  is_polymer=False, polymer_label=None),
+        dict(entity_id='10', is_polymer=False, polymer_label=None),
+    ])
+    pl.testing.assert_frame_equal(
+            actual_atoms,
+            expected_atoms,
+            check_dtypes=False,
+    )
+
+def test_annotate_domains():
+    asym_atoms = pl.DataFrame([
+        dict(chain_id='A', seq_id=1),
+        dict(chain_id='A', seq_id=2),
+        dict(chain_id='A', seq_id=3),
+        dict(chain_id='B', seq_id=1),
+        dict(chain_id='B', seq_id=2),
+        dict(chain_id='B', seq_id=3),
+    ])
+    cath_labels = pl.DataFrame([
+            dict(chain_id='A', seq_ids=[1, 2], cath_label=0),
+            dict(chain_id='B', seq_ids=[2, 3], cath_label=1),
+    ])
+
+    actual_atoms = mmg.annotate_domains(asym_atoms, cath_labels)
+    expected_atoms = pl.DataFrame([
+        dict(chain_id='A', seq_id=1, cath_label=0),
+        dict(chain_id='A', seq_id=2, cath_label=0),
+        dict(chain_id='A', seq_id=3, cath_label=None),
+        dict(chain_id='B', seq_id=1, cath_label=None),
+        dict(chain_id='B', seq_id=2, cath_label=1),
+        dict(chain_id='B', seq_id=3, cath_label=1),
+    ])
+    pl.testing.assert_frame_equal(
+            actual_atoms,
+            expected_atoms,
+            check_dtypes=False,
+    )
+
+def test_pick_polymer_labels():
+    db = mmg.open_db(':memory:', mode='rwc')
+    mmg.init_db(db)
+    mmg.pick_polymer_labels(db)
+
+    assert mmg.select_metadatum(db, 'polymer_labels') == [
+            'polypeptide(L)',
+            'polydeoxyribonucleotide',
+            'polyribonucleotide',
+    ]
+
+def test_pick_cath_labels():
+    db = mmg.open_db(':memory:', mode='rwc')
+    mmg.init_db(db)
+
+    # Not using all of the columns that would be present in the real dataframe; 
+    # just those that are necessary for creating labels.
+    cath_domains = pl.DataFrame([
+            dict(pdb_id='1xyz', c=1, a=20, t=5, h=10),
+            dict(pdb_id='2xyz', c=1, a=20, t=5, h=10),
+
+            dict(pdb_id='3xyz', c=1, a=10, t=8, h=10),
+            dict(pdb_id='4xyz', c=1, a=10, t=8, h=20),
+            dict(pdb_id='5xyz', c=1, a=10, t=10, h=10),
+
+            # Only one cluster member; too few to include
+            dict(pdb_id='6xyz', c=2, a=10, t=10, h=10),
+    ])
+
+    actual_labels = mmg.pick_cath_labels(db, cath_domains, 2)
+    expected_labels = pl.DataFrame([
+            dict(pdb_id='1xyz', cath_label=1),
+            dict(pdb_id='2xyz', cath_label=1),
+
+            dict(pdb_id='3xyz', cath_label=0),
+            dict(pdb_id='4xyz', cath_label=0),
+            dict(pdb_id='5xyz', cath_label=0),
+    ])
+
+    pl.testing.assert_frame_equal(
+            actual_labels,
+            expected_labels,
+            check_dtypes=False,
+    )
+    assert mmg.select_metadatum(db, 'cath_labels') == ['1.10', '1.20']
+
+def test_pick_training_zones_1ypi_2ypi_3ypi(tmp_path):
     # Prepare an in-memory census database containing 1ypi (apo TIM), 2ypi 
     # (holo TIM), and 3ypi (holo TIM).  The idea is to make a training database 
     # that (i) only includes the parts of the first holo structure that aren't 
@@ -302,6 +446,25 @@ def test_pick_training_zones_1ypi_2ypi_3ypi():
     train_db = mmg.open_db(':memory:', mode='rwc')
     mmg.init_db(train_db)
 
+    make_files(tmp_path, {
+        'cath-classification-data/cath-domain-list.txt': '''\
+1ypiA00     3    20    20    70     1     4     1     8     1   247 1.900
+1ypiB00     3    20    20    70     1     4     1     8     2   247 1.900
+2ypiA00     3    20    20    70     1     4     1     8     5   247 2.500
+2ypiB00     3    20    20    70     1     4     1     8     6   247 2.500
+3ypiA00     3    20    20    70     1     4     1     9     1   247 2.800
+3ypiB00     3    20    20    70     1     4     1     9     2   247 2.800
+''',
+        'cath-classification-data/cath-domain-boundaries-seqreschopping.txt': '''\
+1ypiA00	1-247
+1ypiB00	1-247
+2ypiA00	1-247
+2ypiB00	1-247
+3ypiA00	1-247
+3ypiB00	1-247
+'''
+    })
+
     config = mmg.Config(
             census_md5=None,
 
@@ -327,11 +490,26 @@ def test_pick_training_zones_1ypi_2ypi_3ypi():
 
             atom_inclusion_radius_A=75,
             atom_inclusion_boundary_depth_A=3,
+
+            cath_md5={},
+            cath_min_domains=7000,
     )
+    polymer_labels = mmg.get_polymer_labels()
+    cath_labels = pl.DataFrame([
+        dict(pdb_id='1ypi', chain_id='A', domain_id=0, seq_ids=inclusive_range(1, 247), cath_label=6),
+        dict(pdb_id='1ypi', chain_id='B', domain_id=0, seq_ids=inclusive_range(1, 247), cath_label=6),
+        dict(pdb_id='2ypi', chain_id='A', domain_id=0, seq_ids=inclusive_range(1, 247), cath_label=6),
+        dict(pdb_id='2ypi', chain_id='B', domain_id=0, seq_ids=inclusive_range(1, 247), cath_label=6),
+        dict(pdb_id='3ypi', chain_id='A', domain_id=0, seq_ids=inclusive_range(1, 247), cath_label=6),
+        dict(pdb_id='3ypi', chain_id='B', domain_id=0, seq_ids=inclusive_range(1, 247), cath_label=6),
+    ])
+
     mmg.pick_training_zones(
             train_db,
             census_db,
             config=config,
+            polymer_labels=polymer_labels,
+            cath_labels=cath_labels,
             get_mmcif_path=lambda pdb_id: pdb_dir / f'{pdb_id}.cif.gz',
     )
 
@@ -353,6 +531,39 @@ def test_pick_training_zones_1ypi_2ypi_3ypi():
     # This isn't the most stringent check, but I can't really think of anything 
     # else that would be robust to small changes in the code.
     assert mmg.select_structures(train_db) == ['1ypi', '2ypi']
+
+    # Check that each atom gets the right polymer/CATH labels.  We can take 
+    # advantage of the fact that for all of the structures in this test, 
+    # subchains A & B are the only proteins.  The other subchains are either 
+    # water or small molecules.
+    for atoms, in train_db.execute('SELECT atoms FROM assembly').fetchall():
+        atoms = (
+                atoms
+                .with_columns(
+                    expected_polymer_label=(
+                        pl.when(pl.col('subchain_id').is_in(['A', 'B']))
+                        .then(0)
+                        .otherwise(None)
+                    ),
+                    expected_cath_label=(
+                        pl.when(pl.col('subchain_id').is_in(['A', 'B']))
+                        .then(6)
+                        .otherwise(None)
+                    ),
+                )
+        )
+        pl.testing.assert_series_equal(
+                atoms['polymer_label'],
+                atoms['expected_polymer_label'],
+                check_names=False,
+                check_dtypes=False,
+        )
+        pl.testing.assert_series_equal(
+                atoms['cath_label'],
+                atoms['expected_cath_label'],
+                check_names=False,
+                check_dtypes=False,
+        )
 
     assert_index_exists(train_db, 'zone_neighbor', 'zone_id')
 
@@ -416,11 +627,16 @@ def test_pick_training_zones_7spt_1c58():
 
             atom_inclusion_radius_A=75,
             atom_inclusion_boundary_depth_A=3,
+
+            cath_md5={},
+            cath_min_domains=7000,
     )
     mmg.pick_training_zones(
             train_db,
             census_db,
             config=config,
+            polymer_labels=[],
+            cath_labels=pl.DataFrame([], CATH_LABELS_SCHEMA),
             get_mmcif_path=lambda pdb_id: pdb_dir / f'{pdb_id}.cif.gz',
     )
 
@@ -461,7 +677,9 @@ def test_pick_training_zones_7spt_1c58():
 def test_load_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     make_files(tmp_path, {
-        'census_db': 'version 1',
+        'census.duckdb': 'version 1',
+        'cath_domain_list.txt': '1oaiA00     1    10     8    10',
+        'cath_domain_boundaries.txt': '1oaiA00	1-59',
         'nonbio_residues': 'GOL\nPEG',
     })
 
@@ -486,10 +704,16 @@ def test_load_config(tmp_path, monkeypatch):
         nonbiological_residues='nonbio_residues',
         atom_inclusion_radius_A='76',
         atom_inclusion_boundary_depth_A='3',
+        cath_min_domains=7000,
     )
+    census_path = 'census.duckdb'
+    cath_paths = {
+            'domain-list.txt': 'cath_domain_list.txt',
+            'domain-boundaries.txt': 'cath_domain_boundaries.txt',
+    }
 
     with db:
-        config_1 = mmg.load_config(db, 'census_db', params)
+        config_1 = mmg.load_config(db, census_path, cath_paths, params)
 
     assert config_1.census_md5 == 'db3ec040e20dfc657dab510aeab74759'
     assert config_1.zone_size_A == 10
@@ -526,9 +750,14 @@ def test_load_config(tmp_path, monkeypatch):
     assert mmg.select_metadatum(db, 'neighbor_count_threshold') == 1
     assert mmg.select_metadatum(db, 'atom_inclusion_radius_A') == 76
     assert mmg.select_metadatum(db, 'atom_inclusion_boundary_depth_A') == 3
+    assert mmg.select_metadatum(db, 'cath_md5') == {
+            'domain-list.txt': 'c12d622a3d928a74b834c6b74aa320ee',
+            'domain-boundaries.txt': '2dc2593e5e1cf1721003040016178351',
+    }
+    assert mmg.select_metadatum(db, 'cath_min_domains') == 7000
 
     with db:
-        config_2 = mmg.load_config(db, 'census_db', params)
+        config_2 = mmg.load_config(db, census_path, cath_paths, params)
 
     assert config_1 == config_2
 
@@ -542,15 +771,21 @@ def test_load_config(tmp_path, monkeypatch):
 def test_load_config_err(tmp_files, pre_config, config, error, monkeypatch):
     monkeypatch.chdir(tmp_files)
 
+    cath_paths = {
+            'domain-list.txt': 'cath_domain_list.txt',
+            'domain-boundaries.txt': 'cath_domain_boundaries.txt',
+    }
+
     db = mmg.open_db(':memory:', mode='rwc')
     mmg.init_db(db)
 
     if pre_config:
         with db:
-            mmg.load_config(db, tmp_files / 'pre_mmc_pdb.duckdb', pre_config)
+            mmg.load_config(db, tmp_files / 'pre_mmc_pdb.duckdb', cath_paths, pre_config)
 
     with error:
         with db:
-            mmg.load_config(db, tmp_files / 'mmc_pdb.duckdb', config)
+            mmg.load_config(db, tmp_files / 'mmc_pdb.duckdb', cath_paths, config)
 
-
+def inclusive_range(start, stop):
+    return list(range(start, stop+1))

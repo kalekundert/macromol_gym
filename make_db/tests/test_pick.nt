@@ -734,6 +734,8 @@ test_load_config_err:
     id: missing-keys
     tmp_files:
       mmc_pdb.duckdb: version 1
+      cath_domain_list.txt: 1oaiA00     1    10     8    10
+      cath_domain_boundaries.txt: 1oaiA00	1-59
       nonbio_residues:
         > GOL
         > PEG
@@ -755,6 +757,7 @@ test_load_config_err:
       nonbiological_residues: nonbio_residues
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
+      cath_min_domains: 7000
     error:
       type: ValueError
       message: 'zone_size_A' not specified
@@ -762,6 +765,8 @@ test_load_config_err:
     id: extra-keys
     tmp_files:
       mmc_pdb.duckdb: version 1
+      cath_domain_list.txt: 1oaiA00     1    10     8    10
+      cath_domain_boundaries.txt: 1oaiA00	1-59
       nonbio_residues:
         > GOL
         > PEG
@@ -785,6 +790,7 @@ test_load_config_err:
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
       unexpected_key: 42
+      cath_min_domains: 7000
     error:
       type: ValueError
       message: the following keys aren't recognized: {'unexpected_key'}
@@ -792,6 +798,8 @@ test_load_config_err:
     id: quantity
     tmp_files:
       mmc_pdb.duckdb: version 1
+      cath_domain_list.txt: 1oaiA00     1    10     8    10
+      cath_domain_boundaries.txt: 1oaiA00	1-59
       nonbio_residues:
         > GOL
         > PEG
@@ -814,6 +822,7 @@ test_load_config_err:
       nonbiological_residues: nonbio_residues
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
+      cath_min_domains: 7000
     error:
       type: ValueError
       message: 'density_check_radius_A' must be a number, not 'XX'
@@ -821,6 +830,8 @@ test_load_config_err:
     id: integer
     tmp_files:
       mmc_pdb.duckdb: version 1
+      cath_domain_list.txt: 1oaiA00     1    10     8    10
+      cath_domain_boundaries.txt: 1oaiA00	1-59
       nonbio_residues:
         > GOL
         > PEG
@@ -843,6 +854,7 @@ test_load_config_err:
       nonbiological_residues: nonbio_residues
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
+      cath_min_domains: 7000
     error:
       type: ValueError
       message: 'neighbor_count_threshold' must be an integer, not '1.5'
@@ -850,6 +862,8 @@ test_load_config_err:
     id: fraction
     tmp_files:
       mmc_pdb.duckdb: version 1
+      cath_domain_list.txt: 1oaiA00     1    10     8    10
+      cath_domain_boundaries.txt: 1oaiA00	1-59
       nonbio_residues:
         > GOL
         > PEG
@@ -872,6 +886,7 @@ test_load_config_err:
       nonbiological_residues: nonbio_residues
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
+      cath_min_domains: 7000
     error:
       type: ValueError
       message: 'subchain_check_fraction_of_zone' must be between 0 and 1, not 75
@@ -879,6 +894,8 @@ test_load_config_err:
     id: elements
     tmp_files:
       mmc_pdb.duckdb: version 1
+      cath_domain_list.txt: 1oaiA00     1    10     8    10
+      cath_domain_boundaries.txt: 1oaiA00	1-59
       nonbio_residues:
         > GOL
         > PEG
@@ -900,6 +917,7 @@ test_load_config_err:
       nonbiological_residues: nonbio_residues
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
+      cath_min_domains: 7000
     error:
       type: ValueError
       message: 'allowed_elements' must be a list of elements, not 'C'
@@ -907,6 +925,8 @@ test_load_config_err:
     id: elements
     tmp_files:
       mmc_pdb.duckdb: version 1
+      cath_domain_list.txt: 1oaiA00     1    10     8    10
+      cath_domain_boundaries.txt: 1oaiA00	1-59
       nonbio_residues:
         > GOL
         > PEG
@@ -929,6 +949,7 @@ test_load_config_err:
       nonbiological_residues: nonbio_residues
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
+      cath_min_domains: 7000
     error:
       type: ValueError
       message: 'allowed_elements' must be a list of elements, not {'OO'}
@@ -937,6 +958,8 @@ test_load_config_err:
     tmp_files:
       pre_mmc_pdb.duckdb: version 1
       mmc_pdb.duckdb: version 2
+      cath_domain_list.txt: 1oaiA00     1    10     8    10
+      cath_domain_boundaries.txt: 1oaiA00	1-59
       nonbio_residues:
         > GOL
         > PEG
@@ -959,6 +982,7 @@ test_load_config_err:
       nonbiological_residues: nonbio_residues
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
+      cath_min_domains: 7000
     config:
       zone_size_A: 10
       density_check_radius_A: 15
@@ -978,6 +1002,7 @@ test_load_config_err:
       nonbiological_residues: nonbio_residues
       atom_inclusion_radius_A: 76
       atom_inclusion_boundary_depth_A: 3
+      cath_min_domains: 7000
     error:
       type: ValueError
       message: the following parameters have changed since the last run: ['census_md5']

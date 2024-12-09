@@ -1,11 +1,36 @@
 import polars as pl
-import os
 
-from parsy import generate, regex, whitespace
-from dataclasses import dataclass
+from inform import parse_range
 from pathlib import Path
+from more_itertools import one
 
-def parse_cath_chain_list(path):
+def load_cath_domains(cath_dir):
+    rel_paths = [
+            'cath-classification-data/cath-domain-list.txt',
+            'cath-classification-data/cath-domain-boundaries-seqreschopping.txt',
+    ]
+    paths = [get_cath_path(cath_dir, p) for p in rel_paths]
+
+    domain_list = parse_cath_domain_list(paths[0])
+    domain_resis = parse_cath_domain_boundaries_seqres(paths[1])
+
+    # In v4.3.0, the `domain_resis` table has ≈40k (≈8%) more rows than the 
+    # `domain_list` table.  Every row in the `domain_list` table has a 
+    # corresponding row in the `domain_resis` table.  In the few cases I looked 
+    # at, the extra domains belong to structures that have other domains in 
+    # `domain_list`.  I suspect that these extra domains were identified by the 
+    # domain chopping algorithm, but not assigned to a CATH hierarchy.
+
+    domains = domain_list.join(
+            domain_resis,
+            on=['pdb_id', 'chain_id', 'domain_id'],
+            how='left',
+            coalesce=True,
+    )
+
+    return domains, dict(zip(rel_paths, paths))
+
+def parse_cath_domain_list(path):
     rows = []
 
     for line in Path(path).read_text().splitlines():
@@ -19,128 +44,46 @@ def parse_cath_chain_list(path):
             pdb_id=name[0:4],
             chain_id=name[4:5],
             domain_id=int(name[5:7]),
-            c=c,
-            a=a,
-            t=t,
-            h=h,
+            c=int(c),
+            a=int(a),
+            t=int(t),
+            h=int(h),
         )
         rows.append(row)
 
     return pl.DataFrame(rows)
 
-def parse_cath_domain_boundaries(path):
-    domains = {}
+def parse_cath_domain_boundaries_seqres(path):
+    rows = []
 
     for line in Path(path).read_text().splitlines():
         if line.startswith('#'):
             continue
 
-        chain = chain_spec.parse(line)
+        name, seq_ids = line.split() 
+        assert len(name) == 7
 
-        for i, domain in enumerate(chain.domains, 0):
-            k = f'{chain.pdb_id}{chain.chain_id}{i:02}'
-            assert k not in domains
-            domains[k] = domain
+        row = dict(
+            pdb_id=name[0:4],
+            chain_id=name[4:5],
+            domain_id=int(name[5:7]),
+            seq_ids=list(parse_range(seq_ids)),
+        )
+        rows.append(row)
 
-    return domains
+    return pl.DataFrame(rows)
 
-def get_cath_path():
-    return os.environ['CATH_PLUS']
+def get_cath_path(dir, name):
+    path = dir / name
+    if path.exists():
+        return path
 
+    name_glob = f'{path.stem}-v?_?_?{path.suffix}'
+    path_glob = path.parent.glob(name_glob)
 
-@generate
-def chain_spec():
-    pdb_id = yield regex(r'\w{4}').desc('PDB id')
-    chain_id = yield regex(r'[A-Z0]').desc('chain')
-    yield whitespace
-
-    domains = []
-    fragments = []
-
-    num_domains = yield regex(r'D(\d{2})', group=1).map(int).desc('num domains')
-    yield whitespace
-    num_fragments = yield regex(r'F(\d{2})', group=1).map(int).desc('num fragments')
-
-    for i in range(num_domains):
-        yield whitespace
-        domain = yield domain_spec
-        domains.append(domain)
-
-    for i in range(num_fragments):
-        yield whitespace
-        fragment = yield fragment_spec
-        fragments.append(fragment)
-
-    return Chain(
-            pdb_id=pdb_id,
-            chain_id=chain_id,
-            domains=domains,
-            fragments=fragments,
+    return one(
+            path_glob,
+            too_short=ValueError(f"CATH file not found, expected to find one of:\n{path}\n{path.parent / name_glob}"),
+            too_long=ValueError(f"Found multiple files matching:\n{path.parent / name_glob}"),
     )
 
-@generate
-def domain_spec():
-    segments = []
-    num_segments = yield regex(r'\d+').map(int).desc('num segments')
-
-    for i in range(num_segments):
-        yield whitespace
-        segment = yield segment_spec
-        segments.append(segment)
-
-    return segments
-
-@generate
-def segment_spec():
-    start = yield residue_spec.desc('start residue')
-    yield whitespace
-    end = yield residue_spec.desc('end residue')
-
-    return Segment(start, end)
-
-@generate
-def fragment_spec():
-    segment = yield segment_spec
-    yield whitespace
-
-    # I don't know why this information (the number of residues) is provided; 
-    # it seems 100% redundant...
-    yield regex(r'[(]\d+[)]')
-
-    return segment
-
-@generate
-def residue_spec():
-    chain_id = yield regex(r'[A-Z]').desc('chain')
-    yield whitespace
-    index = yield regex(r'-?[0-9]+').desc('index')
-    yield whitespace
-    ins_code = yield regex(r'-|[A-Z]').desc('insertion code')
-
-    if ins_code == '-':
-        ins_code = ''
-
-    return Residue(chain_id, index + ins_code)
-
-@dataclass
-class Residue:
-    chain_id: str
-    seq_label: str
-
-@dataclass
-class Segment:
-    start: Residue
-    end: Residue
-
-    @classmethod
-    def from_labels(cls, chain_id, start_label, end_label):
-        start = Residue(chain_id, start_label)
-        end = Residue(chain_id, end_label)
-        return cls(start, end)
-
-@dataclass
-class Chain:
-    pdb_id: str
-    chain_id: str
-    domains: list[list[Segment]]
-    fragments: list[Segment]

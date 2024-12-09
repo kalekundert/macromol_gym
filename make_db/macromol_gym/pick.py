@@ -1,6 +1,6 @@
 """
 Usage:
-    mmt_pick_training_examples <db> <census> <config>
+    mmt_pick_training_examples <db> <census> <config> [-c <dir>]
 
 Arguments:
     <db>
@@ -15,9 +15,53 @@ Arguments:
     <config>
         A NestedText file specifying the following parameters:
 
-        grid_spacing_A:
+        - `zone_size_A`
 
+        - `density_check_radius_A`
+        - `density_check_voxel_size_A`
+        - `density_check_min_atoms_nm3`
+        - `density_check_max_atoms_nm3`
 
+        - `subchain_check_radius_A`
+        - `subchain_check_fraction_of_zone`
+        - `subchain_check_fraction_of_subchain`
+        - `subchain_pair_check_fraction_of_zone`
+        - `subchain_pair_check_fraction_of_subchain`
+
+        - `neighbor_geometry`
+        - `neighbor_distance_A`
+        - `neighbor_count_threshold`
+
+        - `allowed_elements`:
+          A list of atomic elements that are allowed to be included in the 
+          database.
+
+        - `nonbiological_residues`:
+          The path to a file containing a list of residue types to ignore when 
+          calculating densities.  The file should be a text file with one 
+          residue name on each line.  Most residue names are 3 letters.
+
+          These residues are not removed from the structures stored in the 
+          database.  They just don't count for the various density thresholds 
+          that are checked.  The idea is that regions of structure with more 
+          "non-biological" atoms aren't as likely to be added to the database, 
+          but if they are added, they won't be missing any atoms.
+
+        - `atom_inclusion_radius_A`
+        - `atom_inclusion_boundary_depth_A`
+
+Options:
+    -c --cath <dir>
+        The path to a directory containing a copy of the CATH-Plus database.  
+        This directory must contain at least the following two files:
+
+            cath-classification-data/cath-domain-list.txt
+            cath-classification-data/cath-domain-boundaries-seqreschopping.txt
+
+        Both of these files may optionally have a version number inserted after 
+        the file name and before the `.txt`.  If no path is specified, the 
+        `$CATH_PLUS` environment variable will be used instead.  An error will 
+        occur if no CATH directory can be found.
 """
 
 import polars as pl
@@ -33,6 +77,7 @@ from .database_io import (
         insert_structure, insert_assembly, insert_zone,
         insert_neighbors, select_neighbors,
 )
+from .cath import load_cath_domains
 from .density import make_density_interpolator
 from .geometry import (
         tetrahedron_faces,
@@ -54,6 +99,7 @@ from sklearn.neighbors import KDTree
 from sklearn.decomposition import PCA
 from icosphere import icosphere
 from pipeline_func import f
+from collections import defaultdict
 from itertools import product, combinations
 from more_itertools import one, flatten
 from tqdm import tqdm
@@ -90,6 +136,9 @@ class Config:
     atom_inclusion_radius_A: float
     atom_inclusion_boundary_depth_A: float
 
+    cath_md5: dict[str, str]
+    cath_min_domains: int
+
 def main():
     import docopt
 
@@ -97,25 +146,39 @@ def main():
 
     train_db = open_db(args['<db>'], mode='rw')
     census_db = open_census_db(census_path := args['<census>'], read_only=True)
-    config = load_config(train_db, census_path, nt.load(args['<config>']))
+    cath_dir = Path(args['--cath'] or os.environ['CATH_PLUS'])
+    cath_domains, cath_paths = load_cath_domains(cath_dir)
     pdb_dir = Path(os.environ['PDB_MMCIF'])
 
+    config = load_config(
+            db=train_db,
+            census_path=census_path,
+            cath_paths=cath_paths,
+            config=nt.load(args['<config>']),
+    )
+
     try:
+        polymer_labels = pick_polymer_labels(train_db)
+        cath_labels = pick_cath_labels(
+                train_db,
+                cath_domains,
+                config.cath_min_domains,
+        )
         pick_training_zones(
                 train_db,
                 census_db,
                 config=config,
+                polymer_labels=polymer_labels,
+                cath_labels=cath_labels,
                 get_mmcif_path=lambda pdb_id: get_pdb_path(pdb_dir, pdb_id),
                 progress_factory=tqdm,
         )
     except KeyboardInterrupt:
         pass
 
-def load_config(db, census_path: str, config: dict[str, Any]):
-    config['census_md5'] = _hash_census_db(census_path)
-
+def load_config(db, census_path: str, cath_paths: Path, config: dict[str, Any]):
     db_config = _select_config(db)
-    user_config = _make_config(config)
+    user_config = _make_config(config, census_path, cath_paths)
 
     if db_config:
         if db_config != user_config:
@@ -131,29 +194,85 @@ def load_config(db, census_path: str, config: dict[str, Any]):
 
     return user_config
 
+def pick_polymer_labels(db):
+    labels = get_polymer_labels()
+    meta = select_metadata(db, ['polymer_labels'])
+
+    if not meta:
+        insert_metadata(db, {'polymer_labels': labels})
+    elif meta['polymer_labels'] != labels:
+        raise ValueError(f"the polymer labels have changed since the last run:\nprevious: {meta['polymer_labels']}\ncurrent: {labels}\nTo use different labels, create a new database.")
+
+    return labels
+
+def get_polymer_labels():
+    # See Experiment #105.  These are the only kinds of polymers that are 
+    # present in the PDB in significant quantities.
+    return [
+            'polypeptide(L)',
+            'polydeoxyribonucleotide',
+            'polyribonucleotide',
+    ]
+
+def pick_cath_labels(db, cath_domains, min_domains: int):
+    labels = (
+            cath_domains
+            .group_by(['c', 'a'])
+            .len()
+            .filter(pl.col('len') >= min_domains)
+            .sort('c', 'a')
+            .with_row_index('cath_label')
+            .select('c', 'a', 'cath_label')
+    )
+
+    label_strs = [f'{c}.{a}' for c, a, _ in labels.iter_rows()]
+    meta = select_metadata(db, ['cath_labels'])
+
+    if not meta:
+        insert_metadata(db, {'cath_labels': label_strs})
+    elif meta['cath_labels'] != label_strs:
+        raise ValueError(f"the CATH labels have changed since the last run:\nprevious: {meta['cath_labels']}\ncurrent: {label_strs}\nTo use different labels, create a new database.")
+
+    return (
+            cath_domains
+            .join(
+                labels,
+                on=['c', 'a'],
+                how='inner',
+                coalesce=True,
+            )
+            .drop('c', 'a', 't', 'h', strict=False)
+    )
+
 def pick_training_zones(
         db, census, *,
         config: Config,
         get_mmcif_path: Callable[[str], Path],
+        polymer_labels: list[str],
+        cath_labels: pl.DataFrame,
         progress_factory=tquiet,
 ):
-    neighbor_centers_A = load_neighbors(
-            db,
-            config.neighbor_geometry, 
-            config.neighbor_distance_A,
-    )
+    cath_labels = _partition_df(cath_labels, ['pdb_id'])
+
+    if config.neighbor_count_threshold:
+        neighbor_centers_A = load_neighbors(
+                db,
+                config.neighbor_geometry, 
+                config.neighbor_distance_A,
+        )
 
     class ZoneVisitor(Visitor):
 
         def __init__(self, structure):
             self.structure = structure
-            self.mmcif = read_mmcif(get_mmcif_path(structure.pdb_id))
+            self.mmcif = mmcif = read_mmcif(get_mmcif_path(structure.pdb_id))
             self.asym_atoms = (
-                    self.mmcif.asym_atoms
+                    mmcif.asym_atoms
                     | f(select_model, structure.model_pdb_ids[0])
                     | f(prune_water)
                     | f(prune_hydrogen)
-                    | f(annotate_polymers, self.mmcif.entities)
+                    | f(annotate_polymers, mmcif.entities, mmcif.polymers, polymer_labels)
+                    | f(annotate_domains, cath_labels[structure.pdb_id])
             )
             self.subchain_counts = count_atoms(
                     self.asym_atoms,
@@ -207,14 +326,17 @@ def pick_training_zones(
                     config.density_check_min_atoms_nm3
 
             for center_A in zone_centers_A[dense_enough]:
-                neighbor_ids = find_zone_neighbors(
-                        calc_density_atoms_nm3,
-                        center_A=center_A,
-                        offsets_A=neighbor_centers_A,
-                        min_density_atoms_nm3=config.density_check_min_atoms_nm3,
-                )
-                if len(neighbor_ids) < config.neighbor_count_threshold:
-                    continue
+                if not config.neighbor_count_threshold:
+                    neighbor_ids = []
+                else:
+                    neighbor_ids = find_zone_neighbors(
+                            calc_density_atoms_nm3,
+                            center_A=center_A,
+                            offsets_A=neighbor_centers_A,
+                            min_density_atoms_nm3=config.density_check_min_atoms_nm3,
+                    )
+                    if len(neighbor_ids) < config.neighbor_count_threshold:
+                        continue
 
                 subchains, subchain_pairs = find_zone_subchains(
                         atoms,
@@ -318,12 +440,59 @@ def find_neighbor_centers_A(geometry: str, distance_A: float):
     }
     return geometries[geometry]() * distance_A
 
-def annotate_polymers(asym_atoms, entities):
-    polymers = entities.select(
+def annotate_polymers(asym_atoms, entities, polymers, labels):
+    is_polymer = entities.select(
             entity_id='id',
             is_polymer=pl.col('type') == 'polymer',
     )
-    return asym_atoms.join(polymers, on='entity_id', how='left', coalesce=True)
+    polymer_labels = polymers.select(
+            entity_id='entity_id',
+            polymer_label=pl.col('type').replace_strict(
+                labels,
+                pl.int_range(len(labels)),
+                default=None,
+            ),
+    )
+    return (
+            asym_atoms
+            .join(is_polymer, on='entity_id', how='left', coalesce=True)
+            .join(polymer_labels, on='entity_id', how='left', coalesce=True)
+            .with_columns(
+                pl.col('is_polymer').fill_null(False),
+            )
+    )
+
+def annotate_domains(asym_atoms, cath_labels):
+    asym_atoms.write_parquet('asym_atoms.parquet')
+    cath_labels.write_parquet('cath_labels.parquet')
+
+    cath_labels = (
+            cath_labels
+            .explode('seq_ids')
+            .select(
+                pl.col('chain_id'),
+                pl.col('seq_ids').alias('seq_id'),
+                pl.col('cath_label'),
+            )
+            .filter(
+                # If the same residue is in multiple domains, arbitrarily 
+                # assign it to whichever one comes first.  See Experiment #106.
+                pl.struct('chain_id', 'seq_id').is_first_distinct()
+            )
+    )
+    cath_labels.write_parquet('cath_labels_2.parquet')
+    annotated_asym_atoms = asym_atoms.join(
+            cath_labels,
+            on=['chain_id', 'seq_id'],
+            how='left',
+            coalesce=True,
+    )
+    annotated_asym_atoms.write_parquet('annotated_asym_atoms.parquet')
+
+    # Make sure the left join didn't accidentally duplicate any atoms.
+    assert len(annotated_asym_atoms) == len(asym_atoms)
+
+    return annotated_asym_atoms
 
 def check_elements(
         atoms: Atoms,
@@ -515,7 +684,7 @@ def make_kd_tree(atoms):
     return KDTree(get_atom_coords(atoms))
 
 
-def _make_config(config):
+def _make_config(config, census_path, cath_paths):
 
     def validator(f):
         def wrapper(key):
@@ -531,14 +700,14 @@ def _make_config(config):
     @validator
     def integer(key, value):
         try:
-            return int(config[key])
+            return int(value)
         except:
             raise ValueError(f"{key!r} must be an integer, not {value!r}")
 
     @validator
     def quantity(key, value):
         try:
-            return float(config[key])
+            return float(value)
         except:
             raise ValueError(f"{key!r} must be a number, not {value!r}")
 
@@ -577,14 +746,12 @@ def _make_config(config):
                 for x in path.read_text().splitlines()
         ]
 
-        if too_long := [x for x in residues if len(x) > 3]:
+        if too_long := [x for x in residues if len(x) > 5]:
             raise ValueError(f"{key!r} must be a list of residue names, but the following are too long: {too_long}")
 
         return residues
 
     validators = dict(
-            census_md5=string,
-
             zone_size_A=quantity,
 
             density_check_radius_A=quantity,
@@ -607,12 +774,32 @@ def _make_config(config):
 
             atom_inclusion_radius_A=quantity,
             atom_inclusion_boundary_depth_A=quantity,
+
+            cath_min_domains=integer,
     )
+
+    neighbor_keys = {
+            'neighbor_geometry',
+            'neighbor_distance_A',
+            'neighbor_count_threshold',
+    }
+    if not set(config) & neighbor_keys:
+        config |= dict(
+            neighbor_geometry='none',
+            neighbor_distance_A=0,
+            neighbor_count_threshold=0,
+        )
 
     kwargs = {k: v(k) for k, v in validators.items()}
 
     if unexpected_keys := set(config) - set(kwargs):
         raise ValueError(f"the following keys aren't recognized: {unexpected_keys!r}")
+
+    kwargs['census_md5'] = _md5_hash(census_path)
+    kwargs['cath_md5'] = {
+            k: _md5_hash(v)
+            for k, v in cath_paths.items()
+    }
 
     return Config(**kwargs)
 
@@ -631,7 +818,7 @@ def _select_config(db):
 def _insert_config(db, config):
     insert_metadata(db, asdict(config))
 
-def _hash_census_db(db_path):
+def _md5_hash(db_path: Path | str):
     hash = md5()
     hash.update(Path(db_path).read_bytes())
     return hash.hexdigest()
@@ -656,6 +843,14 @@ def _create_indices(db):
             ON zone_neighbor (zone_id)
     ''')
 
+def _partition_df(df, cols):
+    return defaultdict(
+            lambda: pl.DataFrame([], df.schema),
+            _flatten_keys(df.partition_by(cols, as_dict=True))
+    )
+
+def _flatten_keys(d):
+    return {one(k): v for k, v in d.items()}
 
 if __name__ == '__main__':
     main()
