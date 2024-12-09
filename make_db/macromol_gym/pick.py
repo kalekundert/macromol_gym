@@ -25,12 +25,11 @@ import numpy as np
 import periodictable
 import nestedtext as nt
 import pickle
-import json
 import os
 
 from .database_io import (
         open_db,
-        upsert_metadata, delete_metadatum, select_metadata, select_metadatum,
+        insert_metadata, upsert_metadata, delete_metadatum, select_metadata, select_metadatum,
         insert_structure, insert_assembly, insert_zone,
         insert_neighbors, select_neighbors,
 )
@@ -627,15 +626,10 @@ def _select_config(db):
     if missing_keys := set(keys) - set(config):
         raise ValueError(f"failed to load config from database.\nThe following required parameters were not found: {missing_keys!r}")
 
-    # SQLite doesn't have a way to know that these are supposed to be 
-    # JSON-encoded lists, so we have to decode them manually.
-    config['allowed_elements'] = json.loads(config['allowed_elements'])
-    config['nonbiological_residues'] = json.loads(config['nonbiological_residues'])
-
     return Config(**config)
 
 def _insert_config(db, config):
-    upsert_metadata(db, asdict(config))
+    insert_metadata(db, asdict(config))
 
 def _hash_census_db(db_path):
     hash = md5()

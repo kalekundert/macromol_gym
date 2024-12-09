@@ -39,9 +39,6 @@ def open_db(path: str | Path, mode: Literal['ro', 'rw', 'rwc'] = 'ro'):
         committing/rolling back transactions as necessary.
     """
 
-    sqlite3.register_adapter(list, _adapt_json)
-    sqlite3.register_converter('LIST', _convert_json)
-
     sqlite3.register_adapter(np.ndarray, _adapt_array)
     sqlite3.register_converter('VECTOR_3D', _convert_array)
 
@@ -68,7 +65,8 @@ def init_db(db):
     cur.execute('''\
             CREATE TABLE IF NOT EXISTS metadata (
                 key TEXT PRIMARY KEY,
-                value ANY
+                value ANY,
+                encoding TEXT
             )
     ''')
     cur.execute('''\
@@ -139,15 +137,28 @@ def init_db(db):
     ''')
 
 
+def insert_metadata(db, metadata: dict[str, Any]):
+    duplicate_keys = select_metadata(db, list(metadata))
+    if any(duplicate_keys):
+        raise OverwriteError(f"cannot overwrite existing metadata key(s): {list(duplicate_keys)!r}")
+
+    db.executemany(
+            '''\
+            INSERT INTO metadata (key, value, encoding)
+            VALUES (?, ?, ?)
+            ''',
+            _encode_metadata(metadata),
+    )
+
 def upsert_metadata(db, metadata: dict[str, Any]):
     db.executemany(
             '''\
-            INSERT INTO metadata (key, value)
-            VALUES (:k, :v)
+            INSERT INTO metadata (key, value, encoding)
+            VALUES (?1, ?2, ?3)
             ON CONFLICT (key)
-            DO UPDATE SET value=:v
+            DO UPDATE SET value=?2, encoding=?3
             ''',
-            [dict(k=k, v=v) for k, v in metadata.items()],
+            _encode_metadata(metadata),
     )
 
 def insert_structure(db, pdb_id, *, model_id):
@@ -262,20 +273,31 @@ def insert_curriculum(db, zone_ids, random_seeds, difficulty):
 
 
 def select_metadata(db, keys):
+
+    def decode(value, encoding):
+        if encoding == 'sqlite':
+            return value
+        elif encoding == 'json':
+            return json.loads(value)
+        else:
+            raise ValueError(f"unexpected encoding: {encoding}")
+
     placeholders = ', '.join(['?'] * len(keys))
     cur = db.execute(
-            f'SELECT key, value FROM metadata WHERE key in ({placeholders})',
+            f'''\
+            SELECT key, value, encoding
+            FROM metadata
+            WHERE key in ({placeholders})
+            ''',
             keys,
     )
-    return dict(cur.fetchall())
+    return {
+            k: decode(v, enc)
+            for k, v, enc in cur.fetchall()
+    }
 
 def select_metadatum(db, key):
-    cur = db.execute('SELECT value FROM metadata WHERE key=?', [key])
-    cur.row_factory = _scalar_row_factory
-    return one(
-            cur.fetchall(),
-            too_short=KeyError(key),
-    )
+    return select_metadata(db, [key])[key]
 
 def select_structures(db):
     cur = db.execute('SELECT pdb_id FROM structure')
@@ -413,12 +435,6 @@ def show(db, query):
     print(df)
 
 
-def _adapt_json(obj):
-    return json.dumps(obj).encode('utf-8')
-
-def _convert_json(bytes):
-    return json.loads(bytes.decode('utf-8'))
-
 def _adapt_array(array):
     out = io.BytesIO()
     np.save(out, array, allow_pickle=False)
@@ -438,6 +454,17 @@ def _convert_dataframe(bytes):
     in_ = io.BytesIO(bytes)
     df = pl.read_parquet(in_)
     return df
+
+def _encode_metadata(metadata: dict[str, Any]):
+
+    def encode(value):
+        sqlite_types = type(None), int, float, str, bytes
+        if isinstance(value, sqlite_types):
+            return value, 'sqlite'
+        else:
+            return json.dumps(value), 'json'
+
+    return [(k, *encode(v)) for k, v in metadata.items()]
 
 def _dict_row_factory(cur, row):
     return {
@@ -459,3 +486,6 @@ def _dataclass_row_factory(cls, col_map={}):
 def _scalar_row_factory(cur, row):
     return one(row)
 
+
+class OverwriteError(Exception):
+    pass

@@ -20,20 +20,39 @@ def test_metadata():
     db = mmg.open_db(':memory:', mode='rwc')
     mmg.init_db(db)
 
+    # Insert new values:
+
     with db:
-        mmg.upsert_metadata(db, {
+        mmg.insert_metadata(db, {
             'a': 1,
-            'b': 2,
+            'b': 2.0,
             'c': 'x',
+            'd': [3, 4],
+            'e': {'y': 5, 'z': 6},
         })
 
     assert mmg.select_metadatum(db, 'a') == 1
     assert mmg.select_metadatum(db, 'b') == 2
     assert mmg.select_metadatum(db, 'c') == 'x'
+    assert mmg.select_metadatum(db, 'd') == [3, 4]
+    assert mmg.select_metadatum(db, 'e') == {'y': 5, 'z': 6}
     assert mmg.select_metadata(db, ['a', 'c']) == {
             'a': 1,
             'c': 'x',
     }
+
+    # Overwrite existing values:
+
+    with pytest.raises(mmg.OverwriteError):
+        mmg.insert_metadata(db, {'a': 99})
+
+    assert mmg.select_metadatum(db, 'a') == 1
+
+    mmg.upsert_metadata(db, {'a': 99})
+
+    assert mmg.select_metadatum(db, 'a') == 99
+
+    # Delete values:
 
     with db:
         mmg.delete_metadatum(db, 'a')
