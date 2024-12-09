@@ -186,7 +186,8 @@ def insert_structure(db, pdb_id, *, model_id):
 def update_splits(db, splits):
     assert set(splits.keys()) == set(select_structures(db))
 
-    db.execute('DELETE FROM split')
+    delete_splits(db)
+
     db.executemany(
             'INSERT INTO split (name) VALUES (?)',
             [(x,) for x in unique(splits.values())],

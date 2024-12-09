@@ -9,11 +9,14 @@ Options:
     -s --random-seed <int>          [default: 0]
         Groups are assigned to splits with probability proportional to the 
         space that would be left in that split, after the group is added.  This 
-        is a random process, controlled by this seed.
+        is a random but deterministic, controlled by this seed.
 
     -d --dry-run
         Calculate splits and report the final statistics, but don't write the 
         splits to the database.
+
+It's ok to run this command multiple times.  Each invocation will overwrite any 
+previously assigned splits.
 """
 
 import networkx as nx
@@ -134,7 +137,11 @@ def summarize_splits(struct_zone_counts, targets, splits):
         return pl.col(col) / pl.col(col).sum()
 
     split_counts = (
-            pl.DataFrame(list(splits.items()), ['pdb_id', 'split'])
+            pl.DataFrame(
+                list(splits.items()),
+                ['pdb_id', 'split'],
+                orient='row',
+            )
             .with_columns(
                 zone_count=pl.col('pdb_id').replace(
                     struct_zone_counts,
