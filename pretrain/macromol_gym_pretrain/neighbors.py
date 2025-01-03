@@ -1,10 +1,12 @@
 import numpy as np
 
 from .database_io import (
-        select_metadatum, select_neighbors,
-        select_zone_center_A, select_zone_neighbors
+        select_cached_metadatum, select_neighbors,
+        select_zone_center_A, select_zone_neighbors, get_cached,
 )
-from .random import sample_coord_from_cube, sample_uniform_unit_vector
+from macromol_gym_unsupervised.random import (
+        sample_coord_from_cube, sample_uniform_unit_vector,
+)
 from macromol_dataframe import (
         Coords, Coord, Frame,
         make_coord_frame, make_coord_frame_from_rotation_vector,
@@ -14,7 +16,6 @@ from dataclasses import dataclass
 from itertools import product
 from math import radians
 
-from typing import Any, Callable
 from numpy.typing import NDArray
 
 @dataclass
@@ -24,7 +25,7 @@ class NeighborParams:
     noise_max_distance_A: float
     noise_max_angle_deg: float
 
-def get_neighboring_frames(db, i, zone_ids, neighbor_params, db_cache):
+def get_neighboring_frames(db, rng, *, zone_id, neighbor_params, db_cache):
     # Nomenclature
     # ============
     # home:
@@ -41,8 +42,7 @@ def get_neighboring_frames(db, i, zone_ids, neighbor_params, db_cache):
     # =================
     # i: The frame for any coordinates in the database, include zone centers 
     #    and atomic coordinates.  This function does not use the atomic 
-    #    coordinates itself, but it's assumed that the caller will.  Note that 
-    #    this frame has nothing to do with the index argument *i*.
+    #    coordinates itself, but it's assumed that the caller will.
     #
     # a: The frame where the home is located at the origin, and the neighbor is 
     #    offset in one of a small number of possible directions.  Because the 
@@ -60,25 +60,26 @@ def get_neighboring_frames(db, i, zone_ids, neighbor_params, db_cache):
     #    to generate the second region.  It's just meant to add a little noise 
     #    and prevent the model from keying in on exact distances.
 
-    # If *i* continues to increment between epochs, then we will sample 
-    # different rotations/translations in each epoch.  Otherwise, we won't.
-
-    rng = np.random.default_rng(i)
-
-    zone_id = zone_ids[i % len(zone_ids)]
-    zone_size_A = _cache_zone_size_A(db, db_cache)
+    zone_size_A = select_cached_metadatum(db, db_cache, 'zone_size_A')
     zone_center_A = select_zone_center_A(db, zone_id)
     zone_neighbor_indices = select_zone_neighbors(db, zone_id)
 
     home_origin_i = sample_coord_from_cube(rng, zone_center_A, zone_size_A)
 
-    neighbor_directions_i = _cache_neighbor_directions(db, db_cache)
-    neighbor_direction_i = _sample_uniform_unit_vector_in_neighborhood(
-            rng,
-            neighbor_directions_i,
-            _cache_pairwise_rotation_matrices(db_cache, neighbor_directions_i),
-            zone_neighbor_indices,
-    )
+    if select_cached_metadatum(db, db_cache, 'neighbor_count_threshold') == 0:
+        neighbor_direction_i = sample_uniform_unit_vector(rng)
+    else:
+        neighbor_directions_i = _cache_neighbor_directions(db, db_cache)
+        pairwise_rotation_matrices = _cache_pairwise_rotation_matrices(
+                db_cache,
+                neighbor_directions_i,
+        )
+        neighbor_direction_i = _sample_uniform_unit_vector_in_neighborhood(
+                rng,
+                neighbor_directions_i,
+                pairwise_rotation_matrices,
+                zone_neighbor_indices,
+        )
 
     neighbor_label = rng.integers(len(neighbor_params.direction_candidates))
     neighbor_direction_a = neighbor_params.direction_candidates[neighbor_label]
@@ -96,7 +97,7 @@ def get_neighboring_frames(db, i, zone_ids, neighbor_params, db_cache):
     )
     frame_ac = frame_bc @ frame_ab
 
-    return zone_id, frame_ia, frame_ac, neighbor_label
+    return frame_ia, frame_ac, neighbor_label
 
 def _make_neighboring_frames(
         home_origin_i: Coord,
@@ -115,30 +116,17 @@ def _make_neighboring_frames(
 
     return frame_ia, frame_ab
 
-def _cache_zone_size_A(db, db_cache):
-    return _load_from_cache(
-            db_cache, 'zone_size_A',
-            lambda: select_metadatum(db, 'zone_size_A'),
-    )
-
 def _cache_neighbor_directions(db, db_cache):
-    return _load_from_cache(
+    return get_cached(
             db_cache, 'neighbor_directions',
             lambda: _require_unit_vectors(select_neighbors(db)),
     )
 
 def _cache_pairwise_rotation_matrices(db_cache, neighbor_directions):
-    return _load_from_cache(
+    return get_cached(
             db_cache, 'pairwise_rotation_matrices',
             lambda: _precalculate_pairwise_rotation_matrices(neighbor_directions)
     )
-
-def _load_from_cache(cache: dict, key: str, value_factory: Callable[[], Any]):
-    try:
-        return cache[key]
-    except KeyError:
-        value = cache[key] = value_factory()
-        return value
 
 def _sample_uniform_unit_vector_in_neighborhood(
         rng: np.random.Generator,

@@ -10,7 +10,10 @@ def make_db(path=':memory:', *, split='train'):
         zone_size_A = 10
         neighbors_i = mmgp.icosahedron_faces() * 30
 
-        mmgp.upsert_metadata(db, {'zone_size_A': zone_size_A})
+        mmgp.upsert_metadata(db, {
+            'zone_size_A': zone_size_A,
+            'neighbor_count_threshold': 1,
+        })
         mmgp.insert_neighbors(db, neighbors_i)
 
         struct_ids = [

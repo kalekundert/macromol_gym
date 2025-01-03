@@ -3,7 +3,7 @@ import macromol_gym_pretrain.neighbors as _mmgp
 import numpy as np
 
 from scipy.stats import ks_1samp
-from param_helpers import make_db
+from make_db import make_db
 from macromol_dataframe import transform_coords, invert_coord_frame
 from itertools import combinations
 
@@ -29,11 +29,12 @@ def test_get_neighboring_frames():
     )
 
     for i in range(100):
-        zone_id, frame_ia, frame_ab, b = mmgp.get_neighboring_frames(
-                db, i,
-                zone_ids=zone_ids,
+        zone_id, rng = mmgp.zone_id_from_index(i, zone_ids)
+        frame_ia, frame_ab, b = mmgp.get_neighboring_frames(
+                db=db, db_cache=db_cache,
+                rng=rng,
+                zone_id=zone_id,
                 neighbor_params=params,
-                db_cache=db_cache,
         )
         frame_ai = invert_coord_frame(frame_ia)
         frame_ba = invert_coord_frame(frame_ab)
@@ -91,28 +92,6 @@ def test_make_neighboring_frames():
 
     assert frame_ia @ v(2, 3, 0, 1) == approx(v( 2, 0, 0, 1))
     assert frame_ib @ v(2, 3, 0, 1) == approx(v( 0, 0, 0, 1))
-
-def test_load_from_cache():
-    num_calls = 0
-
-    def value_factory():
-        nonlocal num_calls
-        num_calls += 1
-        return 1
-
-    cache = {}
-
-    assert _mmgp._load_from_cache(cache, 'a', value_factory) == 1
-    assert num_calls == 1
-
-    assert _mmgp._load_from_cache(cache, 'a', value_factory) == 1
-    assert num_calls == 1
-
-    assert _mmgp._load_from_cache(cache, 'b', value_factory) == 1
-    assert num_calls == 2
-
-    assert _mmgp._load_from_cache(cache, 'b', value_factory) == 1
-    assert num_calls == 2
 
 def test_sample_uniform_vector_in_neighborhood_2():
     # With just two possible neighbors, it's easy to check that no points end 

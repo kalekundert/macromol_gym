@@ -4,6 +4,16 @@ from math import sqrt
 
 PHI = (1 + sqrt(5)) / 2
 
+def polyhedron_faces(shape):
+    faces = {
+            'tetrahedron': tetrahedron_faces,
+            'cube': cube_faces,
+            'octahedron': octahedron_faces,
+            'dodecahedron': dodecahedron_faces,
+            'icosahedron': icosahedron_faces,
+    }
+    return faces[shape]()
+
 @functools.cache
 def tetrahedron_faces():
     x = 1 / sqrt(2)

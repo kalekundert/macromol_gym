@@ -40,7 +40,9 @@ class InfiniteSampler:
             If *False*, yield the same indices in the same order every epoch.  
             If *True*, yield new indices in every epoch, without skipping any.  
             This option is typically enabled for the training set, and disabled 
-            for the validation and test sets.
+            for the validation and test sets.  In order for this option to have 
+            any effect, the training environment must call `set_epoch()` before 
+            every epoch.
 
         shuffle:
             If *True*, shuffle the indices within each epoch.  The shuffling is 

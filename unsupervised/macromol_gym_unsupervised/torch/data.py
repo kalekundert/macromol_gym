@@ -1,15 +1,17 @@
 import numpy as np
-import torch
+import logging
 
-from ..images import image_from_atoms, ImageParams
-from ..random import sample_frame, sample_coord_from_cube
-from ..database_io import (
-        open_db, select_split, select_metadatum,
-        select_zone_center_A, select_zone_atoms,
+from ..samples import (
+        MakeSampleFunc, zone_id_from_index, make_unprocessed_sample,
 )
-from macromol_dataframe import transform_atom_coords
+from ..database_io import (
+        open_db, select_split, select_curriculum,
+)
 from torch.utils.data import Dataset
+from typing import Optional
 from pathlib import Path
+
+log = logging.getLogger('macromol_gym')
 
 class MacromolDataset(Dataset):
 
@@ -18,6 +20,8 @@ class MacromolDataset(Dataset):
             *,
             db_path: Path,
             split: str,
+            make_sample: Optional[MakeSampleFunc] = None,
+            max_difficulty: float = 1,
     ):
         # Don't store a connection to the database in the constructor.  The 
         # constructor runs in the parent process, after which the instantiated 
@@ -28,10 +32,18 @@ class MacromolDataset(Dataset):
         self.db = None
         self.db_path = db_path
         self.split = split
+        self.make_sample = make_sample or make_unprocessed_sample
 
         db = open_db(db_path)
         self.zone_ids = select_split(db, split)
-        self.zone_size_A = select_metadatum(db, 'zone_size_A')
+
+        if max_difficulty < 1:
+            n = len(self.zone_ids)
+            self.zone_ids = _filter_zones_by_curriculum(
+                    self.zone_ids,
+                    select_curriculum(db, max_difficulty),
+            )
+            log.info("remove difficult training examples: split=%s max_difficulty=%s num_examples_before_filter=%d num_examples_after_filter=%d", split, max_difficulty, n, len(self.zone_ids))
 
     def __repr__(self):
         return f'<{self.__class__.__name__} db={str(self.db_path)!r} split={self.split!r} len={len(self)}>'
@@ -42,61 +54,13 @@ class MacromolDataset(Dataset):
     def __getitem__(self, i):
         if self.db is None:
             self.db = open_db(self.db_path)
+            self.db_cache = {}
 
-        rng = np.random.default_rng(i)
+        zone_id, rng = zone_id_from_index(i, self.zone_ids)
 
-        zone_id = self.zone_ids[i % len(self.zone_ids)]
-        zone_center_A = select_zone_center_A(self.db, zone_id)
+        return self.make_sample(self.db, self.db_cache, rng, zone_id)
 
-        atoms_i = select_zone_atoms(self.db, zone_id)
-        origin_i = sample_coord_from_cube(rng, zone_center_A, self.zone_size_A)
-        frame_ia = sample_frame(rng, origin_i)
+def _filter_zones_by_curriculum(zone_ids, curriculum):
+    mask = np.isin(zone_ids, curriculum)
+    return zone_ids[mask]
 
-        return dict(
-                rng=rng,
-                zone_id=zone_id,
-                atoms_i=atoms_i,
-                frame_ia=frame_ia,
-        )
-
-class MacromolImageDataset(MacromolDataset):
-
-    def __init__(
-            self,
-            *,
-            db_path: Path,
-            split: str,
-            img_params: ImageParams,
-    ):
-        # This class is slightly opinionated about how images should be 
-        # created.  This allows it to provide a simple---but not fully 
-        # general---API for common image parameters.  If you need to do 
-        # something beyond the scope of this API, use `MacromolDataset` 
-        # directly.
-        super().__init__(db_path=db_path, split=split)
-        self.img_params = img_params
-
-    def __getitem__(self, i):
-        x = super().__getitem__(i)
-
-        atoms_a = transform_atom_coords(x['atoms_i'], x['frame_ia'])
-        image = image_from_atoms(atoms_a, self.img_params)
-        image = torch.from_numpy(image).float()
-
-        return dict(
-                **x,
-                atoms_a=atoms_a,
-                image=image,
-        )
-
-class MapDataset(Dataset):
-
-    def __init__(self, dataset, func):
-        self.dataset = dataset
-        self.func = func
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, i):
-        return self.func(self.dataset[i])

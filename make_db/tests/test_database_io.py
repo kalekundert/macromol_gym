@@ -41,6 +41,10 @@ def test_metadata():
             'c': 'x',
     }
 
+    db_cache = {}
+    assert mmg.select_cached_metadatum(db, db_cache, 'a') == 1
+    assert db_cache == {'a': 1}
+
     # Overwrite existing values:
 
     with pytest.raises(mmg.OverwriteError):
@@ -51,6 +55,7 @@ def test_metadata():
     mmg.upsert_metadata(db, {'a': 99})
 
     assert mmg.select_metadatum(db, 'a') == 99
+    assert mmg.select_cached_metadatum(db, db_cache, 'a') == 1
 
     # Delete values:
 
@@ -59,6 +64,8 @@ def test_metadata():
     
     with pytest.raises(KeyError):
         mmg.select_metadatum(db, 'a')
+
+    assert mmg.select_cached_metadatum(db, db_cache, 'a') == 1
 
 def test_zone():
     db = mmg.open_db(':memory:', mode='rwc')
@@ -242,3 +249,9 @@ def test_curriculum():
             mmg.select_curriculum(db, 0.45),
             np.array([zone_ids[0]]),
     )
+
+def test_get_cached():
+    cache = {'a': 1}
+    assert mmg.get_cached(cache, 'a', lambda: 2) == 1
+    assert mmg.get_cached(cache, 'b', lambda: 2) == 2
+    assert cache == {'a': 1, 'b': 2}

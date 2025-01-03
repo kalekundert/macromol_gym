@@ -1,43 +1,49 @@
 import macromol_voxelize as mmvox
 import numpy as np
 
+from pipeline_func import f
 from dataclasses import dataclass
+
+from typing import Optional
 from numpy.typing import ArrayLike
 
-@dataclass
+@dataclass(kw_only=True)
 class ImageParams:
     grid: mmvox.Grid
-    atom_radius_A: float
+    atom_radius_A: Optional[float] = None
     element_channels: list[str]
     ligand_channel: bool = False
     normalize_mean: ArrayLike = 0
     normalize_std: ArrayLike = 1
 
 def image_from_atoms(atoms, img_params):
-
-    def assign_channels(atoms):
-        channels = img_params.element_channels
-        atoms = mmvox.set_atom_channels_by_element(atoms, channels)
-        atoms = mmvox.set_atom_radius_A(atoms, img_params.atom_radius_A)
-
-        if img_params.ligand_channel:
-            atoms = mmvox.add_atom_channel_by_expr(
-                    atoms,
-                    expr='is_polymer',
-                    channel=len(channels),
-            )
-
-        return atoms
+    atom_radius_A = img_params.atom_radius_A
+    if atom_radius_A is None:
+        atom_radius_A = img_params.grid.resolution_A / 2
 
     mmvox_img_params = mmvox.ImageParams(
             channels=(
                 len(img_params.element_channels) + img_params.ligand_channel
             ),
             grid=img_params.grid,
-            process_filtered_atoms=assign_channels,
-            max_radius_A=img_params.atom_radius_A,
+            max_radius_A=atom_radius_A,
     )
-    img = mmvox.image_from_atoms(atoms, mmvox_img_params)
+
+    img_atoms = (
+            atoms
+            | f(mmvox.discard_atoms_outside_image, mmvox_img_params)
+            | f(mmvox.set_atom_channels_by_element, img_params.element_channels)
+            | f(mmvox.set_atom_radius_A, atom_radius_A)
+    )
+
+    if img_params.ligand_channel:
+        img_atoms = mmvox.add_atom_channel_by_expr(
+                img_atoms,
+                expr='is_polymer',
+                channel=len(img_params.element_channels),
+        )
+
+    img = mmvox.image_from_all_atoms(img_atoms, mmvox_img_params)
 
     normalize_image_in_place(
             img,
@@ -45,7 +51,7 @@ def image_from_atoms(atoms, img_params):
             img_params.normalize_std,
     )
 
-    return img
+    return img, img_atoms
 
 def normalize_image_in_place(img, mean, std):
     # I haven't actually done any benchmarking, but this post [1] suggests that 

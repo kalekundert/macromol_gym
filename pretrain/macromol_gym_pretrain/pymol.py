@@ -1,87 +1,58 @@
 import pymol
 import macromol_dataframe as mmdf
+import polars as pl
 import numpy as np
+import nestedtext as nt
 import os
 
 from pymol import cmd
 from pymol.wizard import Wizard
-from macromol_gym_pretrain.database_io import (
-        open_db, select_zone_ids, select_zone_pdb_ids, select_zone_atoms, 
-        select_split,
+from macromol_gym_pretrain.torch import MacromolDataset, InfiniteSampler
+from macromol_gym_pretrain.samples import (
+        make_neighbor_sample, make_neighbor_image_sample,
 )
-from macromol_gym_pretrain.neighbors import (
-        NeighborParams, get_neighboring_frames,
-)
-from macromol_gym_pretrain.geometry import cube_faces
-from macromol_gym_pretrain.torch.infinite_sampler import InfiniteSampler
-from macromol_voxelize import (
-        ImageParams, Grid, 
-        set_atom_radius_A, set_atom_channels_by_element,
-)
+from macromol_gym_pretrain.neighbors import NeighborParams
+from macromol_gym_pretrain.images import ImageParams
+from macromol_gym_pretrain.geometry import polyhedron_faces, cube_faces
+from macromol_gym_pretrain.database_io import open_db, select_zone_pdb_ids
+from macromol_voxelize import Grid
 from macromol_voxelize.pymol import (
-        select_view, render_view, pick_channel_colors, cgo_cube_edges,
+        select_view, render_image, pick_channel_colors, cgo_cube_edges,
 )
-from macromol_dataframe import (
-        make_coord_frame, invert_coord_frame, get_origin,
-)
-from pipeline_func import f
+from macromol_dataframe import make_coord_frame, invert_coord_frame, get_origin
+from voluptuous import Schema, Coerce
+from platformdirs import user_config_path
+from collections import ChainMap
+from functools import partial
+from itertools import count
+from pathlib import Path
+from csv import DictWriter
+
+NEIGHBOR_GEOMETRIES = {
+        4: 'tetrahedron',
+        6: 'cube',
+        8: 'octahedron',
+        12: 'dodecahedron',
+        20: 'icosahedron',
+}
 
 class TrainingExamples(Wizard):
+    DEFAULT_CONFIG_PATH = user_config_path('macromol_gym') / 'mmgp_training_examples.nt'
 
     def __init__(
             self,
-            db_path,
-            length_voxels=24,
-            resolution_A=1,
-            atom_radius_A=None,
-            channels=[['C'], ['N'], ['O'], ['*']],
-            distance_A=30,
-            noise_max_distance_A=2,
-            noise_max_angle_deg=10,
-            show_voxels=True,
-            scale_alpha=False,
-            split='train',
+            db_path=None,
+            config_path=None,
     ):
         super().__init__()
 
-        length_voxels = int(length_voxels)
-        resolution_A = float(resolution_A)
-        atom_radius_A = float(atom_radius_A) if atom_radius_A else None
-        distance_A = float(distance_A)
-        noise_max_distance_A = float(noise_max_distance_A)
-        noise_max_angle_deg = float(noise_max_angle_deg)
+        self.dialog_prompt = None
+        self.dialog_callback = None
+        self.dialog_input = ''
+        self.dialog_error = ''
 
-        self.db = open_db(db_path)
-        self.zone_ids = select_split(self.db, split)
-        self.neighbor_params = NeighborParams(
-                direction_candidates=cube_faces(),
-                distance_A=distance_A,
-                noise_max_distance_A=noise_max_distance_A,
-                noise_max_angle_deg=noise_max_angle_deg,
-        )
-        self.db_cache = {}
-        self.img_params = ImageParams(
-                grid=Grid(
-                    length_voxels=length_voxels,
-                    resolution_A=resolution_A,
-                ),
-                channels=len(channels),
-        )
-        self.atom_radius_A = atom_radius_A or resolution_A / 2
-        self.channels = channels
-        self.show_voxels = show_voxels
-        self.scale_alpha = scale_alpha
-
-        sampler = InfiniteSampler(
-                len(self.zone_ids),
-                shuffle=True,
-        )
-        self.zone_order = list(sampler)
-
-        self.i = 0
-        self.random_seed = 0
-
-        self.redraw()
+        self.load_config(db_path, config_path)
+        self.load_dataset()
 
     def get_panel(self):
         panel = [
@@ -89,20 +60,31 @@ class TrainingExamples(Wizard):
                 [2, "Next <C-Space>", 'cmd.get_wizard().next_training_example()'],
                 [2, "Previous", 'cmd.get_wizard().prev_training_example()'],
                 [2, "New random seed", 'cmd.get_wizard().new_random_seed()'],
-                [3, f"Distance: {self.neighbor_params.distance_A}A", 'distance_A'],
-                [3, f"Noise distance: {self.neighbor_params.noise_max_distance_A}A", 'noise_max_distance_A'],
-                [3, f"Noise angle: {self.neighbor_params.noise_max_angle_deg} deg", 'noise_max_angle_deg'],
+                [2, "Done", 'cmd.set_wizard()'],
+
+                [1, "\\555Parameters", ''],
+                [2, f"Image length: \\090{self.img_params.grid.length_voxels} voxels", 'cmd.get_wizard().start_image_length_dialog()'],
+                [2, f"Image resolution: \\090{self.img_params.grid.resolution_A}A", 'cmd.get_wizard().start_image_resolution_dialog()'],
+                [2, f"Atom radius: \\090{self.img_params.atom_radius_A}A", 'cmd.get_wizard().start_atom_radius_dialog()'],
+                [3, f"Neighbor geometry: {NEIGHBOR_GEOMETRIES[len(self.neighbor_params.direction_candidates)]}", 'neighbor_geometry'],
+                [2, f"Neighbor distance: \\090{self.neighbor_params.distance_A}A", 'cmd.get_wizard().start_neighbor_distance_dialog()'],
+                [2, f"Noise distance: \\090{self.neighbor_params.noise_max_distance_A}A", 'cmd.get_wizard().start_noise_max_distance_dialog()'],
+                [2, f"Noise angle: \\090{self.neighbor_params.noise_max_angle_deg} deg", 'cmd.get_wizard().start_noise_max_angle_deg_dialog()'],
                 [3, f"Show voxels: {'yes' if self.show_voxels else 'no'}", 'show_voxels'],
                 [3, f"Scale alpha: {'yes' if self.scale_alpha else 'no'}", 'scale_alpha'],
-                [2, "Done", 'cmd.set_wizard()'],
         ]
         return panel
 
     def get_menu(self, tag):
         menus = {
-                'distance_A': [[2, 'Distance', '']],
-                'noise_max_distance_A': [[2, 'Noise distance', '']],
-                'noise_max_angle_deg': [[2, 'Noise angle', '']],
+                'neighbor_geometry': [
+                    [2, 'Neighbor geometry', ''],
+                    [1, 'tetrahedron', 'cmd.get_wizard().set_neighbor_geometry("tetrahedron")'],
+                    [1, 'cube', 'cmd.get_wizard().set_neighbor_geometry("cube")'],
+                    [1, 'octahedron', 'cmd.get_wizard().set_neighbor_geometry("octahedron")'],
+                    [1, 'dodecahedron', 'cmd.get_wizard().set_neighbor_geometry("dodecahedron")'],
+                    [1, 'icosahedron', 'cmd.get_wizard().set_neighbor_geometry("icosahedron")'],
+                ],
                 'show_voxels': [
                     [2, 'Show voxels', ''],
                     [1, 'yes', 'cmd.get_wizard().set_show_voxels(True)'],
@@ -114,34 +96,58 @@ class TrainingExamples(Wizard):
                     [1, 'no', 'cmd.get_wizard().set_scale_alpha(False)'],
                 ],
         }
-
-        curr_dist_A = self.neighbor_params.distance_A
-        curr_noise_max_dist_A = self.neighbor_params.noise_max_distance_A
-        curr_noise_max_angle_deg = self.neighbor_params.noise_max_angle_deg
-
-        for d in [-10, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 10]:
-            menus['distance_A'] += [[
-                1, f'{d:+}A',
-                f'cmd.get_wizard().set_neighbor_distance_A({curr_dist_A + d})'
-            ]]
-            menus['noise_max_distance_A'] += [[
-                1, f'{d:+}A',
-                f'cmd.get_wizard().set_noise_distance_A({curr_noise_max_dist_A + d})'
-            ]]
-            menus['noise_max_angle_deg'] += [[
-                1, f'{d:+} deg',
-                f'cmd.get_wizard().set_noise_angle_deg({curr_noise_max_angle_deg + d})'
-            ]]
-
         return menus[tag]
 
     def get_prompt(self):
-        return [f"Zone: {self.curr_zone_id}"]
+        if self.dialog_prompt is None:
+            return [f"Zone: {self.curr_zone_id}"]
+
+        prompt = [f"{self.dialog_prompt} \\999{self.dialog_input}"]
+        if self.dialog_error:
+            prompt += [f"\\900Error: {self.dialog_error}"]
+
+        return prompt
 
     def do_key(self, key, x, y, mod):
-        # This is <Ctrl-Space>; see `wt_vs_mut` for details.
-        if (key, mod) == (0, 2):
+        ESC = (27, 0)
+        BACKSPACE = (8, 0)
+        ENTER = (10, 13)
+        CTRL_SPACE = (0, 2)
+
+        if self.dialog_prompt is not None:
+
+            if (key, mod) == ESC:
+                self.dialog_prompt = None
+                self.dialog_callback = None
+                self.dialog_input = ''
+                self.dialog_error = ''
+                self.redraw()
+
+            elif (key, mod) == BACKSPACE:
+                self.dialog_input = self.dialog_input[:-1]
+
+            elif key >= 32:
+                self.dialog_input += chr(key)
+
+            elif key in ENTER:
+                try:
+                    self.dialog_callback(self.dialog_input)
+                except Exception as err:
+                    self.dialog_error = str(err)
+                    self.redraw()
+                else:
+                    self.dialog_prompt = None
+                    self.dialog_callback = None
+                    self.dialog_input = ''
+                    self.dialog_error = ''
+                    self.redraw()
+
+            else:
+                return 0
+
+        elif (key, mod) == CTRL_SPACE:
             self.next_training_example()
+
         else:
             return 0
 
@@ -150,6 +156,92 @@ class TrainingExamples(Wizard):
 
     def get_event_mask(self):
         return Wizard.event_mask_key
+
+
+    def load_config(self, db_path, config_path):
+        schema = Schema({
+            'db_path': str,
+            'db_split': str,
+            'image_length_voxels': Coerce(int),
+            'image_resolution_A': Coerce(float),
+            'atom_radius_A': Coerce(float),
+            'element_channels': [[str]],
+            'neighbor_geometry': str,
+            'neighbor_distance_A': Coerce(float),
+            'noise_max_distance_A': Coerce(float),
+            'noise_max_angle_deg': Coerce(float),
+            'show_voxels': Coerce(bool),
+            'scale_alpha': Coerce(bool),
+        })
+
+        config_chain = ChainMap()
+
+        if db_path is not None:
+            config_chain.maps.append({'db_path': db_path})
+
+        if config_path is not None:
+            config_i = schema(nt.load(config_path))
+            config_chain.maps.append(config_i)
+
+        if self.DEFAULT_CONFIG_PATH.exists():
+            config_i = schema(nt.load(self.DEFAULT_CONFIG_PATH))
+            config_chain.maps.append(config_i)
+
+        config_chain.maps.append({
+            'db_split': 'train',
+            'image_length_voxels': 24,
+            'image_resolution_A': 1.0,
+            'element_channels': [['C'], ['N'], ['O'], ['*']],
+            'neighbor_geometry': 'cube',
+            'noise_max_distance_A': 0,
+            'noise_max_angle_deg': 0,
+            'show_voxels': True,
+            'scale_alpha': False,
+        })
+
+        self.db_path = Path(config_chain['db_path'])
+        self.db_split = config_chain['db_split']
+
+        grid = Grid(
+                length_voxels=config_chain['image_length_voxels'],
+                resolution_A=config_chain['image_resolution_A'],
+        )
+        self.img_params = ImageParams(
+            grid=grid,
+            atom_radius_A=config_chain.get('atom_radius_A', grid.resolution_A / 2),
+            element_channels=config_chain['element_channels'],
+        )
+        self.neighbor_params = NeighborParams(
+            direction_candidates=polyhedron_faces(config_chain['neighbor_geometry']),
+            distance_A=config_chain.get('neighbor_distance_A', grid.length_A),
+            noise_max_distance_A=config_chain['noise_max_distance_A'],
+            noise_max_angle_deg=config_chain['noise_max_angle_deg'],
+        )
+        self.show_voxels = config_chain['show_voxels']
+        self.scale_alpha = config_chain['scale_alpha']
+
+    def load_dataset(self):
+        self.db = open_db(self.db_path)
+        self.db_cache = {}
+
+        self.dataset = MacromolDataset(
+                db_path=self.db_path,
+                split=self.db_split,
+                make_sample=partial(
+                    make_neighbor_image_sample,
+                    img_params=self.img_params,
+                    neighbor_params=self.neighbor_params,
+                ),
+        )
+        self.sampler = InfiniteSampler(
+                len(self.dataset),
+                shuffle=True,
+        )
+        self.curr_permut = list(self.sampler)
+        self.i = 0
+        self.random_seed = 0
+
+        self.redraw()
 
     def next_training_example(self):
         self.i += 1
@@ -165,16 +257,74 @@ class TrainingExamples(Wizard):
         self.random_seed += 1
         self.redraw(keep_view=True)
 
-    def set_neighbor_distance_A(self, value):
-        self.neighbor_params.distance_A = value
-        self.redraw()
+    def start_image_length_dialog(self):
 
-    def set_noise_distance_A(self, value):
-        self.neighbor_params.noise_max_distance_A = value
-        self.redraw()
+        def set_image_length(x):
+            self.img_params.grid = Grid(
+                    length_voxels=int(x),
+                    resolution_A=self.img_params.grid.resolution_A,
+            )
 
-    def set_noise_angle_deg(self, value):
-        self.neighbor_params.noise_max_angle_deg = value
+        self.dialog_prompt = "Image length (voxels):"
+        self.dialog_callback = set_image_length
+
+        cmd.refresh_wizard()
+
+    def start_image_resolution_dialog(self):
+
+        def set_image_resolution(x):
+            self.img_params.grid = Grid(
+                    length_voxels=self.img_params.grid.length_voxels,
+                    resolution_A=float(x),
+            )
+
+        self.dialog_prompt = "Image resolution (A):"
+        self.dialog_callback = set_image_resolution
+
+        cmd.refresh_wizard()
+
+    def start_atom_radius_dialog(self):
+
+        def set_atom_radius(x):
+            self.img_params.atom_radius_A = float(x)
+
+        self.dialog_prompt = "Atom radius (A):"
+        self.dialog_callback = set_atom_radius
+
+        cmd.refresh_wizard()
+
+    def start_neighbor_distance_dialog(self):
+
+        def set_neighbor_distance(x):
+            self.neighbor_params.distance_A = float(x)
+
+        self.dialog_prompt = "Neighbor distance (A):"
+        self.dialog_callback = set_neighbor_distance
+
+        cmd.refresh_wizard()
+
+    def start_noise_max_distance_dialog(self):
+
+        def set_noise_max_dist(x):
+            self.neighbor_params.noise_max_distance_A = float(x)
+
+        self.dialog_prompt = "Noise max distance (A):"
+        self.dialog_callback = set_noise_max_dist
+
+        cmd.refresh_wizard()
+
+    def start_noise_max_angle_dialog(self):
+
+        def set_noise_max_angle(x):
+            self.neighbor_params.noise_max_angle_deg = float(x)
+
+        self.dialog_prompt = "Noise max angle (deg):"
+        self.dialog_callback = set_noise_max_angle
+
+        cmd.refresh_wizard()
+
+    def set_neighbor_geometry(self, value):
+        self.neighbor_params.direction_candidates = polyhedron_faces(value)
         self.redraw()
 
     def set_show_voxels(self, value):
@@ -190,18 +340,23 @@ class TrainingExamples(Wizard):
             cmd.delete('all')
 
         # Get the next training example:
-        zone_id, frame_ia, frame_ab, b = get_neighboring_frames(
-                self.db,
-                self.zone_order[self.i] + self.random_seed * len(self.zone_ids),
-                self.zone_ids,
-                self.neighbor_params,
-                self.db_cache,
-        )
-        self.curr_zone_id = zone_id
+        n = len(self.dataset)
+        curr_epoch = self.i // n
+
+        if curr_epoch != self.sampler.curr_epoch:
+            self.sampler.set_epoch(curr_epoch)
+            self.curr_permut = list(self.sampler)
+
+        i = self.curr_permut[self.i % n] + n * self.random_seed
+        x = self.dataset[i]
+
+        self.curr_zone_id = x['zone_id']
+
+        frame_ia, frame_ab = x['frame_ia'], x['frame_ab']
         frame_ib = frame_ab @ frame_ia
 
         # Load the relevant structure:
-        zone_pdb = select_zone_pdb_ids(self.db, zone_id)
+        zone_pdb = select_zone_pdb_ids(self.db, self.curr_zone_id)
         pdb_path = mmdf.get_pdb_path(
                 os.environ['PDB_MMCIF'],
                 zone_pdb['struct_pdb_id'],
@@ -229,41 +384,28 @@ class TrainingExamples(Wizard):
                 frame_ix=frame_ib,
         )
 
-        atoms = (
-                select_zone_atoms(self.db, zone_id)
-                | f(set_atom_radius_A, self.atom_radius_A)
-                | f(set_atom_channels_by_element, self.channels)
-        )
-        render_view(
-                atoms_i=atoms,
-                img_params=self.img_params,
-                outline=(1, 1, 0),
-                frame_ix=frame_ia,
-                channel_colors=pick_channel_colors(
-                    'sele_a',
-                    self.channels,
-                ),
+        render_image(
+                img=x['img_a'] if self.show_voxels else None,
+                grid=self.img_params.grid,
+                frame_xi=mmdf.invert_coord_frame(frame_ia),
                 obj_names=dict(
                     voxels='voxels_a',
                     outline='outline_a',
                 ),
-                img=self.show_voxels,
+                channel_colors=pick_channel_colors('sele_a', self.img_params.element_channels),
+                outline=(1, 1, 0),
                 scale_alpha=self.scale_alpha,
         )
-        render_view(
-                atoms_i=atoms,
-                img_params=self.img_params,
-                outline=(0.4, 0.4, 0),
-                frame_ix=frame_ib,
-                channel_colors=pick_channel_colors(
-                    'sele_b',
-                    self.channels,
-                ),
+        render_image(
+                img=x['img_b'] if self.show_voxels else None,
+                grid=self.img_params.grid,
+                frame_xi=mmdf.invert_coord_frame(frame_ib),
                 obj_names=dict(
                     voxels='voxels_b',
                     outline='outline_b',
                 ),
-                img=self.show_voxels,
+                channel_colors=pick_channel_colors('sele_b', self.img_params.element_channels),
+                outline=(0.4, 0.4, 0),
                 scale_alpha=self.scale_alpha,
         )
 
@@ -274,103 +416,269 @@ class TrainingExamples(Wizard):
             cmd.zoom('sele_a or sele_b', buffer=10)
             cmd.center('sele_a or sele_b')
 
-def mmgp_training_examples(db_path, *args, **kwargs):
+def mmgp_training_examples(*args, **kwargs):
+    """
+    DESCRIPTION
+
+        Visualize samples from the neighbor location dataset.
+
+    USAGE
+
+        mmgp_training_examples [db_path [, config_path]]
+
+    ARGUMENTS
+
+        db_path = str: Path to the database file.
+
+        config_path = str: Path to a file specifying various dataset parameters.
+        This should be a NestedText file with the following fields:
+
+            db_path: Database to use (overridden by above argument)
+            db_split: Which split of the data to use; defaults to 'train'
+            image_length_voxels: Length of the image in voxels
+            image_resolution_A: Length of each voxel in angstroms
+            atom_radius_A: Radius of each atom in angstroms
+            element_channels: List of lists of element symbols to include in each channel.
+            neighbor_geometry: Possible neighbor locations.  Must be one of:
+                'tetrahedron', 'cube', 'octagon', 'dodecahedron', 'icosahedron'
+            neighbor_distance_A: Distance between image centers in angstroms
+            noise_max_distance_A: Maximum amount of noise to add to the distance
+            noise_max_angle_deg: Maximum amount to rotate the neighboring image
+            show_voxels: Whether to show the images; 'yes' or 'no'
+            scale_alpha: Whether to scale the alpha channel; 'yes' or 'no'
+
+        Any values specified by this file will override any values specified in 
+        the following default configuration file, if it exists:
+
+            {DEFAULT_CONFIG_PATH}
+            
+    ENVIRONMENT VARIABLES
+
+        PDB_MMCIF = str: Path to the directory containing mmCIF files for every 
+        structure in the database, organized as in the PDB (e.g. `ab/1abc.cif`).
+
+    HOTKEYS:
+
+        Ctrl+Space: Advance to the next training example.
+
+    SEE ALSO
+
+        mmgp_manual_classifier, mmgu_training_examples, voxelize, load_voxels
+    """
     kwargs.pop('_self', None)
-    wizard = TrainingExamples(db_path, *args, **kwargs)
+    wizard = TrainingExamples(*args, **kwargs)
     cmd.set_wizard(wizard)
 
+mmgp_training_examples.__doc__ = mmgp_training_examples.__doc__.format(
+        DEFAULT_CONFIG_PATH=TrainingExamples.DEFAULT_CONFIG_PATH,
+)
 pymol.cmd.extend('mmgp_training_examples', mmgp_training_examples)
 
 class ManualClassifier(Wizard):
+    DEFAULT_CONFIG_PATH = user_config_path('macromol_gym') / 'mmgp_manual_classifier.nt'
 
     def __init__(
             self,
-            db_path,
-            view_size_A=24,
-            neighbor_distance_A=30,
-            noise_max_distance_A=2,
-            noise_max_angle_deg=10,
-            shuffle_seed=0,
-            initial_zone_id=None,
+            db_path=None,
+            config_path=None,
+            log_path='mmgp_manual_classifier_log.csv',
     ):
         super().__init__()
 
-        self.db = open_db(db_path)
-        self.zone_ids = select_zone_ids(self.db)
-        self.neighbor_params = params = NeighborParams(
-                direction_candidates=cube_faces(),
-                distance_A=neighbor_distance_A,
-                noise_max_distance_A=noise_max_distance_A,
-                noise_max_angle_deg=noise_max_angle_deg,
-        )
-        self.db_cache = {}
+        self.log_path = Path(log_path)
 
-        self.frames_ac = [
-                make_coord_frame(u * neighbor_distance_A)
-                for u in params.direction_candidates
-        ]
-        self.frame_names = get_frame_names(params.direction_candidates)
-        self.frame_order = ['+X', '+Y', '+Z', '-X', '-Y', '-Z']
-        self.grid = Grid(
-                length_voxels=view_size_A,
-                resolution_A=1,
-        )
+        self.load_config(db_path, config_path)
+        self.load_dataset()
+        self.load_frames()
+
+        self.dialog_prompt = None
+        self.dialog_callback = None
+        self.dialog_input = ''
+        self.dialog_error = ''
+
+        cmd.delete('all')
+        cmd.set('cartoon_gap_cutoff', 0)
+
         self.curr_pdb_obj = None
 
-        rng = np.random.default_rng(shuffle_seed)
-        rng.shuffle(self.zone_ids)
-
-        if initial_zone_id is None:
-            self.i = 0
-        else:
-            self.i = self.zone_ids.index(initial_zone_id)
-
-        self.init_settings()
-        self.init_view_boxes()
-        self.init_curr_example()
+        self.render_curr_example()
 
     def get_panel(self):
-        return [
+        panel = [
                 [1, "Manual Classifier", ''],
                 [2, "Submit", 'cmd.get_wizard().submit_guess()'],
                 [2, "Skip", 'cmd.get_wizard().skip_guess()'],
                 [2, "Done", 'cmd.set_wizard()'],
+
+                [1, "\\555Parameters", ''],
+                [2, f"View size: \\090{self.view_size_A}A", 'cmd.get_wizard().start_view_size_dialog()'],
+                [2, f"Neighbor distance: \\090{self.neighbor_params.distance_A}A", 'cmd.get_wizard().start_neighbor_distance_dialog()'],
+                [2, f"Noise distance: \\090{self.neighbor_params.noise_max_distance_A}A", 'cmd.get_wizard().start_noise_max_distance_dialog()'],
+                [2, f"Noise angle: \\090{self.neighbor_params.noise_max_angle_deg} deg", 'cmd.get_wizard().start_noise_max_angle_dialog()'],
+
+                [1, "\\555Neighbor Toggles", ''],
+
         ]
+        
+        for name in self.frame_order:
+            i = self.frame_names.index(name)
+
+            status = '\\090maybe' if self.frame_toggles[i] else '\\900no   '
+            if i == self.curr_b:
+                status += '  \\999<--'
+
+            panel.append(
+                [2, f"{name}: {status}", f'cmd.get_wizard().toggle_frame({i})']
+            )
+
+        return panel
 
     def get_prompt(self):
-        return [self.frame_names[self.curr_b]]
+        if self.dialog_prompt is None:
+            return [self.frame_names[self.curr_b]]
+
+        prompt = [f"{self.dialog_prompt} \\999{self.dialog_input}"]
+        if self.dialog_error:
+            prompt += [f"\\900Error: {self.dialog_error}"]
+
+        return prompt
 
     def do_key(self, key, x, y, mod):
-        tab = (9, 0)
-        ctrl_tab = (9, 2)
+        if self.dialog_prompt is not None:
+            return self.do_key_prompt(key, x, y, mod)
+        else:
+            return self.do_key_main(key, x, y, mod)
 
-        def update_guess(step):
-            curr_name = self.frame_names[self.curr_b]
-            curr_name_i = self.frame_order.index(curr_name)
-            next_name_i = (curr_name_i + 1) % len(self.frame_order)
-            next_name = self.frame_order[next_name_i]
-            next_b = self.frame_names.index(next_name)
-            self.update_guess(next_b)
+    def do_key_main(self, key, x, y, mod):
+        TAB = (9, 0)
+        CTRL_TAB = (9, 2)
 
-        if (key, mod) == tab:
-            update_guess(1)
+        if (key, mod) == TAB:
+            self.cycle_guess(1)
             return 1
-        if (key, mod) == ctrl_tab:
-            update_guess(-1)
+
+        if (key, mod) == CTRL_TAB:
+            self.cycle_guess(-1)
             return 1
 
         return 0
 
+    def do_key_prompt(self, key, x, y, mod):
+        ESC = (27, 0)
+        BACKSPACE = (8, 0)
+        ENTER = (10, 13)
+
+        if (key, mod) == ESC:
+            self.dialog_prompt = None
+            self.dialog_callback = None
+            self.dialog_input = ''
+            self.dialog_error = ''
+
+        elif (key, mod) == BACKSPACE:
+            self.dialog_input = self.dialog_input[:-1]
+
+        elif key >= 32:
+            self.dialog_input += chr(key)
+
+        elif key in ENTER:
+            try:
+                self.dialog_callback(self.dialog_input)
+            except Exception as err:
+                self.dialog_error = str(err)
+            else:
+                self.dialog_prompt = None
+                self.dialog_callback = None
+                self.dialog_input = ''
+                self.dialog_error = ''
+
+                self.render_curr_example()
+
+        else:
+            return 0
+
+        cmd.refresh_wizard()
+        return 1
+
     def get_event_mask(self):
         return Wizard.event_mask_key
 
-    def init_settings(self):
-        cmd.set('cartoon_gap_cutoff', 0)
 
-    def init_view_boxes(self):
-        cmd.delete('all')
+    def load_config(self, db_path, config_path):
+        schema = Schema({
+            'db_path': str,
+            'db_split': str,
+            'view_size_A': Coerce(float),
+            'neighbor_distance_A': Coerce(float),
+            'noise_max_distance_A': Coerce(float),
+            'noise_max_angle_deg': Coerce(float),
+        })
 
-        grid = self.grid
+        config_chain = ChainMap()
+
+        if db_path is not None:
+            config_chain.maps.append({'db_path': db_path})
+
+        if config_path is not None:
+            config_i = schema(nt.load(config_path))
+            config_chain.maps.append(config_i)
+
+        if self.DEFAULT_CONFIG_PATH.exists():
+            config_i = schema(nt.load(self.DEFAULT_CONFIG_PATH))
+            config_chain.maps.append(config_i)
+
+        config_chain.maps.append({
+            'db_split': 'train',
+            'view_size_A': 15,
+            'neighbor_distance_A': 18,
+            'noise_max_distance_A': 0,
+            'noise_max_angle_deg': 0,
+        })
+
+        self.db_path = Path(config_chain['db_path'])
+        self.db_split = config_chain['db_split']
+
+        self.view_size_A = config_chain['view_size_A']
+        self.neighbor_params = NeighborParams(
+            direction_candidates=cube_faces(),
+            distance_A=config_chain['neighbor_distance_A'],
+            noise_max_distance_A=config_chain['noise_max_distance_A'],
+            noise_max_angle_deg=config_chain['noise_max_angle_deg'],
+        )
+
+    def load_dataset(self):
+        self.db = open_db(self.db_path)
+        self.db_cache = {}
+
+        self.dataset = MacromolDataset(
+                db_path=self.db_path,
+                split=self.db_split,
+                make_sample=partial(
+                    make_neighbor_sample,
+                    neighbor_params=self.neighbor_params,
+                ),
+        )
+        self.sampler = InfiniteSampler(
+                len(self.dataset),
+                shuffle=True,
+        )
+        self.curr_permut = list(self.sampler)
+
+        if self.log_path.exists():
+            df = pl.read_csv(self.log_path)
+            self.i = df['i'].max() + 1
+        else:
+            self.i = 0
+
+    def load_frames(self):
+        self.frames_ac = [
+                make_coord_frame(u * self.neighbor_params.distance_A)
+                for u in self.neighbor_params.direction_candidates
+        ]
+        self.frame_names = get_frame_names(self.neighbor_params.direction_candidates)
+        self.frame_order = ['+X', '+Y', '+Z', '-X', '-Y', '-Z']
+        self.frame_toggles = [True] * len(self.frames_ac)
+
+    def render_view_boxes(self, keep_view=False):
         dim_yellow = 0.4, 0.4, 0
         dim_red = 0.4, 0, 0
         dim_green = 0, 0.4, 0
@@ -383,33 +691,48 @@ class ManualClassifier(Wizard):
         }
 
         boxes = []
-        boxes += cgo_cube_edges(grid.center_A, grid.length_A, dim_yellow)
+        boxes += cgo_cube_edges(np.zeros(3), self.view_size_A, dim_yellow)
 
         for i, frame_ac in enumerate(self.frames_ac):
-            origin = get_origin(frame_ac)
-            color = frame_colors.get(self.frame_names[i], dim_yellow)
-            boxes += cgo_cube_edges(origin, grid.length_A, color)
+            if self.frame_toggles[i]:
+                origin = get_origin(frame_ac)
+                color = frame_colors.get(self.frame_names[i], dim_yellow)
+                boxes += cgo_cube_edges(origin, self.view_size_A, color)
 
+        if keep_view:
+            view = cmd.get_view()
+
+        cmd.delete('positions')
         cmd.load_cgo(boxes, 'positions')
+
+        if keep_view:
+            cmd.set_view(view)
         
-    def init_curr_example(self):
-        zone_id, frame_ia, frame_ab, b = get_neighboring_frames(
-                self.db,
-                self.i,
-                self.zone_ids,
-                self.neighbor_params,
-                self.db_cache,
-        )
+    def render_curr_example(self):
+        self.frame_toggles = [True] * len(self.frames_ac)
+        self.render_view_boxes()
+
+        n = len(self.dataset)
+        curr_epoch = self.i // n
+
+        if curr_epoch != self.sampler.curr_epoch:
+            self.sampler.set_epoch(curr_epoch)
+            self.curr_permut = list(self.sampler)
+
+        i = self.curr_permut[self.i % n]
+        x = self.dataset[i]
+
+        frame_ia, frame_ab = x['frame_ia'], x['frame_ab']
         frame_ib = frame_ab @ frame_ia
 
-        self.curr_zone_id = zone_id
+        self.curr_zone_id = x['zone_id']
         self.curr_frame_ia = frame_ia
         self.curr_frame_ab = frame_ab
-        self.curr_true_b = b
+        self.curr_true_b = x['b']
 
         cmd.delete(self.curr_pdb_obj)
 
-        zone_pdb = select_zone_pdb_ids(self.db, zone_id)
+        zone_pdb = select_zone_pdb_ids(self.db, self.curr_zone_id)
         pdb_obj = self.curr_pdb_obj = zone_pdb['struct_pdb_id']
         pdb_path = mmdf.get_pdb_path(os.environ['PDB_MMCIF'], pdb_obj)
 
@@ -417,16 +740,20 @@ class ManualClassifier(Wizard):
         cmd.load(pdb_path, state=zone_pdb['model_pdb_id'])
         cmd.disable(pdb_obj)
 
+        grid = Grid(
+                length_voxels=1,
+                resolution_A=self.view_size_A,
+        )
         select_view(
                 name='sele_a',
                 sele=pdb_obj,
-                grid=self.grid,
+                grid=grid,
                 frame_ix=frame_ia,
         )
         select_view(
                 name='sele_b',
                 sele=pdb_obj,
-                grid=self.grid,
+                grid=grid,
                 frame_ix=frame_ib,
         )
 
@@ -443,15 +770,39 @@ class ManualClassifier(Wizard):
         cmd.set_object_ttt('view_a', frame_1d)
         cmd.set_object_ttt(pdb_obj, frame_1d)
 
-        self.update_guess(0)
+        b = self.frame_names.index(self.frame_order[0])
+        self.update_guess(b)
 
         cmd.remove('hydro or resn hoh')
         cmd.util.cbag()
         cmd.util.cbac(pdb_obj)
-        # cmd.hide('everything', pdb_obj)
-        # cmd.show('cartoon', 'view_a or view_b')
+        cmd.show('cartoon', 'view_a or view_b')
         cmd.show('sticks', 'view_a or view_b')
         cmd.zoom('positions', buffer=5)
+
+    def toggle_frame(self, i):
+        self.frame_toggles[i] = not self.frame_toggles[i]
+        if i == self.curr_b:
+            self.cycle_guess(1)
+
+        self.render_view_boxes(keep_view=True)
+        cmd.refresh_wizard()
+
+    def cycle_guess(self, step):
+        curr_name = self.frame_names[self.curr_b]
+        curr_name_i = self.frame_order.index(curr_name)
+
+        for i in count(1):
+            next_name_i = (curr_name_i + i * step) % len(self.frame_order)
+            next_name = self.frame_order[next_name_i]
+            next_b = self.frame_names.index(next_name)
+
+            if self.frame_toggles[next_b]:
+                break
+            if next_b == self.curr_b:
+                break
+
+        self.update_guess(next_b)
 
     def update_guess(self, c):
         # Picture of the relevant coordinate frames:
@@ -466,26 +817,158 @@ class ManualClassifier(Wizard):
         cmd.refresh_wizard()
 
     def submit_guess(self):
-        guess = self.frame_names[self.curr_b]
-        answer = self.frame_names[self.curr_true_b]
-        correct = (self.curr_b == self.curr_true_b)
-
-        print(f"Zone id: {self.zone_ids[self.i]};  Guess: {guess};  Answer: {answer};  {'Correct' if correct else 'Incorrect'}!")
+        self.log_guess(skip=False)
 
         self.i += 1
-        self.init_curr_example()
+        self.render_curr_example()
 
     def skip_guess(self):
-        answer = self.frame_names[self.curr_true_b]
-        print(f"Zone id: {self.zone_ids[self.i]};  Guess: --;  Answer: {answer};  Skipped!")
+        self.log_guess(skip=True)
 
         self.i += 1
-        self.init_curr_example()
+        self.render_curr_example()
 
-def mmgp_manual_classifier(db_path):
-    wizard = ManualClassifier(db_path)
+    def log_guess(self, skip):
+        # Display a message in the console for the user to see immediately:
+        answer = self.frame_names[self.curr_true_b]
+
+        if skip:
+            guess = '--'
+            result = 'Skipped'
+        else:
+            guess = self.frame_names[self.curr_b]
+            correct = (self.curr_b == self.curr_true_b)
+            result = 'Correct' if correct else 'Incorrect'
+
+        print(f"Zone id: {self.curr_zone_id};  Guess: {guess};  Answer: {answer};  {result}!")
+
+        # Write the results to a CSV file for later analysis:
+        row = dict(
+                db_path=self.db_path.resolve(),
+                db_split=self.db_split,
+                i=self.i,
+                zone_id=self.curr_zone_id,
+                view_size_A=self.view_size_A,
+                neighbor_distance_A=self.neighbor_params.distance_A,
+                noise_max_distance_A=self.neighbor_params.noise_max_distance_A,
+                noise_max_angle_deg=self.neighbor_params.noise_max_angle_deg,
+                y_true=self.curr_true_b,
+                y_guess='skip' if skip else self.curr_b,
+        )
+
+        write_header = not self.log_path.exists()
+
+        with open(self.log_path, 'a') as f:
+            csv = DictWriter(f, fieldnames=row.keys(), lineterminator='\n')
+            if write_header:
+                csv.writeheader()
+            csv.writerow(row)
+
+    def start_view_size_dialog(self):
+
+        def set_view_size(x):
+            self.view_size_A = float(x)
+            self.render_curr_example()
+
+        self.dialog_prompt = "View size (A):"
+        self.dialog_callback = set_view_size
+
+        cmd.refresh_wizard()
+
+    def start_neighbor_distance_dialog(self):
+
+        def set_neighbor_distance(x):
+            self.neighbor_params.distance_A = float(x)
+            self.load_frames()
+            self.render_curr_example()
+
+        self.dialog_prompt = "Neighbor distance (A):"
+        self.dialog_callback = set_neighbor_distance
+
+        cmd.refresh_wizard()
+
+    def start_noise_max_distance_dialog(self):
+
+        def set_noise_max_dist(x):
+            self.neighbor_params.noise_max_distance_A = float(x)
+            self.render_curr_example()
+
+        self.dialog_prompt = "Noise max distance (A):"
+        self.dialog_callback = set_noise_max_dist
+
+        cmd.refresh_wizard()
+
+    def start_noise_max_angle_dialog(self):
+
+        def set_noise_max_angle(x):
+            self.neighbor_params.noise_max_angle_deg = float(x)
+            self.render_curr_example()
+
+        self.dialog_prompt = "Noise max angle (deg):"
+        self.dialog_callback = set_noise_max_angle
+
+        cmd.refresh_wizard()
+
+def mmgp_manual_classifier(*args, **kwargs):
+    """
+    DESCRIPTION
+
+        Attempt to manually solve problems from the neighbor location dataset.
+
+        The purpose of this wizard is to help give an intuitive sense for the 
+        difficulty of different sets of neighbor location parameters.
+
+    USAGE
+
+        mmgp_manual_classifier [ db_path [, config_path [, log_path ]]]
+
+    ARGUMENTS
+
+        db_path = str: Path to the database file.
+
+        config_path = str: Path to a file specifying various dataset parameters.
+        This should be a NestedText file with the following fields:
+
+            db_path: Database to use (overridden by above argument)
+            db_split: Which split of the data to use; defaults to 'train'
+            view_size_A: Length of the view in angstroms
+            neighbor_distance_A: Distance between view centers in angstroms
+            noise_max_distance_A: Maximum amount of noise to add to the distance
+            noise_max_angle_deg: Maximum amount to rotate the neighboring image
+
+        Any values specified by this file will override any values specified in 
+        the following default configuration file, if it exists:
+
+            {DEFAULT_CONFIG_PATH}
+            
+        log_path = str: Path to a file where the results of each manual 
+        classification will be logged, in CSV format.  If specified, any 
+        training examples that are present in the log file will be skipped.
+
+    ENVIRONMENT VARIABLES
+
+        PDB_MMCIF = str: Path to the directory containing mmCIF files for every 
+        structure in the database, organized as in the PDB (e.g. `ab/1abc.cif`).
+
+    HOTKEYS
+        
+        Tab: Cycle through possible positions for the second view
+        Ctrl+Tab: Cycle in reverse
+
+        Note that these hotkeys prevent the use of tab-completion while the 
+        wizard is running.
+            
+    SEE ALSO
+
+        mmgp_training_examples, voxelize, load_voxels
+    """
+    kwargs.pop('_self', None)
+    wizard = ManualClassifier(*args, **kwargs)
     cmd.set_wizard(wizard)
 
+mmgp_manual_classifier.__doc__ = mmgp_manual_classifier.__doc__.format(
+        DEFAULT_CONFIG_PATH=ManualClassifier.DEFAULT_CONFIG_PATH,
+)
 pymol.cmd.extend('mmgp_manual_classifier', mmgp_manual_classifier)
 
 def get_frame_names(directions):
@@ -506,5 +989,4 @@ def get_frame_names(directions):
         names.append(name)
 
     return names
-
 

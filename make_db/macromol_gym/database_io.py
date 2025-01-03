@@ -9,7 +9,9 @@ from urllib.request import pathname2url
 from pathlib import Path
 from textwrap import dedent
 
-from typing import Any, Literal
+from typing import TypeVar, Any, Literal, Callable
+
+K, V = TypeVar('K'), TypeVar('V')
 
 # Note: functions that accept a `zone_id` and use it to make a query should 
 # always explicitly convert the ID to an integer.  If `numpy` was involved in 
@@ -17,7 +19,7 @@ from typing import Any, Literal
 # a plain integer.  This will be interpreted by SQLite as a blob, and as a 
 # result the query will mysteriously fail.
 
-def hash_db(db_path: str | Path):
+def hash_db(db_path: str | Path) -> str:
     import xxhash
     m = xxhash.xxh3_64()
     with open(db_path, 'rb') as f:
@@ -25,7 +27,10 @@ def hash_db(db_path: str | Path):
             m.update(chunk)
     return m.hexdigest()
 
-def open_db(path: str | Path, mode: Literal['ro', 'rw', 'rwc'] = 'ro'):
+def open_db(
+        path: str | Path,
+        mode: Literal['ro', 'rw', 'rwc'] = 'ro',
+) -> sqlite3.Connection:
     """
     .. warning::
         It's not safe to fork the database connection object returned by this 
@@ -300,6 +305,13 @@ def select_metadata(db, keys):
 def select_metadatum(db, key):
     return select_metadata(db, [key])[key]
 
+def select_cached_metadatum(db, db_cache, key):
+    return get_cached(
+            cache=db_cache,
+            key=key,
+            value_factory=lambda: select_metadatum(db, key),
+    )
+
 def select_structures(db):
     cur = db.execute('SELECT pdb_id FROM structure')
     cur.row_factory = _scalar_row_factory
@@ -420,6 +432,13 @@ def select_dataframe(db, query):
     cur = db.execute(query)
     cur.row_factory = _dict_row_factory
     return pl.DataFrame(cur.fetchall())
+
+def get_cached(cache: dict[K, V], key: K, value_factory: Callable[[], V]) -> V:
+    try:
+        return cache[key]
+    except KeyError:
+        value = cache[key] = value_factory()
+        return value
 
 
 def delete_metadatum(db, key):

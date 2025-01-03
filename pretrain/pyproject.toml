@@ -18,6 +18,7 @@ requires-python = '~=3.10'
 dependencies = [
   'lightning',
   'macromol_dataframe',
+  'macromol_gym_unsupervised',
   'macromol_voxelize',
   'more_itertools',
   'numpy',

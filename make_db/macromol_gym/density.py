@@ -85,5 +85,5 @@ def make_sphere_kernel(radius_A, voxel_size_A):
     pseudoatom = pl.DataFrame([
             dict(x=0, y=0, z=0, radius_A=radius_A, occupancy=1, channels=[0]),
     ])
-    return mmvox.image_from_atoms(pseudoatom, img_params)[0]
+    return mmvox.image_from_all_atoms(pseudoatom, img_params)[0]
 
