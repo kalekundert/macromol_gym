@@ -26,6 +26,7 @@ dependencies = [
   'reprfunc',
   'scipy',
   'torch',
+  'torch_deterministic',
   'xxhash',
 ]
 

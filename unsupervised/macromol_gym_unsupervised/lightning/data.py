@@ -3,12 +3,11 @@ import macromol_voxelize as mmvox
 import logging
 
 from ..torch.data import MacromolDataset
-from ..torch.infinite_sampler import InfiniteSampler
-from ..torch.batch_rng import collate_rngs
 from ..images import ImageParams
 from ..samples import MakeSampleFunc
 from ..utils import get_num_workers
 from torch.utils.data import DataLoader
+from torch_deterministic import InfiniteSampler, collate_rngs
 from collections.abc import Mapping
 from functools import partial
 

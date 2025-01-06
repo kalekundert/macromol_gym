@@ -7,14 +7,12 @@ import os
 
 from pymol import cmd
 from pymol.wizard import Wizard
-from macromol_gym_pretrain.torch import MacromolDataset, InfiniteSampler
-from macromol_gym_pretrain.samples import (
+from torch_deterministic import InfiniteSampler
+from macromol_gym_pretrain.torch import (
+        MacromolDataset, ImageParams, NeighborParams,
         make_neighbor_sample, make_neighbor_image_sample,
+        open_db, select_zone_pdb_ids, polyhedron_faces, cube_faces,
 )
-from macromol_gym_pretrain.neighbors import NeighborParams
-from macromol_gym_pretrain.images import ImageParams
-from macromol_gym_pretrain.geometry import polyhedron_faces, cube_faces
-from macromol_gym_pretrain.database_io import open_db, select_zone_pdb_ids
 from macromol_voxelize import Grid
 from macromol_voxelize.pymol import (
         select_view, render_image, pick_channel_colors, cgo_cube_edges,

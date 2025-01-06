@@ -7,10 +7,11 @@ import os
 
 from pymol import cmd
 from pymol.wizard import Wizard
-from macromol_gym_unsupervised.torch import MacromolDataset, InfiniteSampler
-from macromol_gym_unsupervised.samples import make_unsupervised_image_sample
-from macromol_gym_unsupervised.images import ImageParams
-from macromol_gym_unsupervised.database_io import open_db, select_zone_pdb_ids
+from torch_deterministic import InfiniteSampler
+from macromol_gym_unsupervised.torch import (
+        MacromolDataset, ImageParams,
+        open_db, select_zone_pdb_ids, make_unsupervised_image_sample,
+)
 from macromol_voxelize import Grid
 from macromol_voxelize.pymol import (
         select_view, render_image, pick_channel_colors
