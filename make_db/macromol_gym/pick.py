@@ -463,8 +463,6 @@ def annotate_polymers(asym_atoms, entities, polymers, labels):
     )
 
 def annotate_domains(asym_atoms, cath_labels):
-    asym_atoms.write_parquet('asym_atoms.parquet')
-    cath_labels.write_parquet('cath_labels.parquet')
 
     cath_labels = (
             cath_labels
@@ -480,14 +478,12 @@ def annotate_domains(asym_atoms, cath_labels):
                 pl.struct('chain_id', 'seq_id').is_first_distinct()
             )
     )
-    cath_labels.write_parquet('cath_labels_2.parquet')
     annotated_asym_atoms = asym_atoms.join(
             cath_labels,
             on=['chain_id', 'seq_id'],
             how='left',
             coalesce=True,
     )
-    annotated_asym_atoms.write_parquet('annotated_asym_atoms.parquet')
 
     # Make sure the left join didn't accidentally duplicate any atoms.
     assert len(annotated_asym_atoms) == len(asym_atoms)
