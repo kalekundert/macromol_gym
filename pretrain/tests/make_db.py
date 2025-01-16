@@ -13,6 +13,8 @@ def make_db(path=':memory:', *, split='train'):
         mmgp.upsert_metadata(db, {
             'zone_size_A': zone_size_A,
             'neighbor_count_threshold': 1,
+            'polymer_labels': [],
+            'cath_labels': [],
         })
         mmgp.insert_neighbors(db, neighbors_i)
 

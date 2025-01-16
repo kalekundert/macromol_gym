@@ -12,6 +12,9 @@ def make_db(path=':memory:', *, split='train'):
         mmgu.upsert_metadata(db, {
             'zone_size_A': zone_size_A,
             'neighbor_count_threshold': 0,
+            'polymer_labels': [],
+            'cath_labels': [],
+
         })
 
         # Insert two structures, each with two atoms separated by 10Å.  A zone 

@@ -28,6 +28,7 @@ class MacromolDataModule(L.LightningDataModule):
             # Dataset parameters:
             make_sample: Optional[MakeSampleFuncs] = None,
             max_difficulty: float = 1,
+            truncate_dataset: Optional[int] = None,
 
             # Data loader parameters:
             batch_size: int,
@@ -48,6 +49,7 @@ class MacromolDataModule(L.LightningDataModule):
                 split=split,
                 make_sample=make_sample_by_split[split],
                 max_difficulty=max_difficulty if split == 'train' else 1,
+                truncate_dataset=truncate_dataset,
             )
 
             split_size = len(dataset)
@@ -117,6 +119,7 @@ class MacromolImageDataModule(MacromolDataModule):
             # Dataset parameters:
             make_sample: MakeSampleFuncs = None,
             max_difficulty: float = 1,
+            truncate_dataset: Optional[int] = None,
 
             # Data loader parameters:
             batch_size: int,
@@ -142,6 +145,7 @@ class MacromolImageDataModule(MacromolDataModule):
                     ),
                 ),
                 max_difficulty=max_difficulty,
+                truncate_dataset=truncate_dataset,
                 batch_size=batch_size,
                 train_epoch_size=train_epoch_size,
                 val_epoch_size=val_epoch_size,
