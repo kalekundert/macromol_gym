@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from functools import partial
 
 from pathlib import Path
-from typing import TypeAlias, Optional
+from typing import TypeAlias, Optional, Callable
 from numpy.typing import ArrayLike
 
 MakeSampleFuncs: TypeAlias = MakeSampleFunc | Mapping[str, MakeSampleFunc]
@@ -37,6 +37,7 @@ class MacromolDataModule(L.LightningDataModule):
             test_epoch_size: Optional[int] = None,
             identical_epochs: bool = False,
             num_workers: Optional[int] = None,
+            collate_fn: Optional[Callable] = None,
     ):
         super().__init__()
 
@@ -75,7 +76,7 @@ class MacromolDataModule(L.LightningDataModule):
                     sampler=sampler,
                     batch_size=batch_size,
                     num_workers=num_workers,
-                    collate_fn=collate_rngs,
+                    collate_fn=collate_fn or collate_rngs,
 
                     # For some reason I don't understand, my worker processes 
                     # get killed by SIGABRT if I use the default 'fork' 
@@ -128,6 +129,7 @@ class MacromolImageDataModule(MacromolDataModule):
             test_epoch_size: Optional[int] = None,
             identical_epochs: bool = False,
             num_workers: Optional[int] = None,
+            collate_fn: Optional[Callable] = None,
     ):
         super().__init__(
                 db_path=db_path,
@@ -152,6 +154,7 @@ class MacromolImageDataModule(MacromolDataModule):
                 test_epoch_size=test_epoch_size,
                 identical_epochs=identical_epochs,
                 num_workers=num_workers,
+                collate_fn=collate_fn,
         )
 
 def require_split_dict(x):
