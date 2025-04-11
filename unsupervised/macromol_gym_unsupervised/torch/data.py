@@ -2,7 +2,8 @@ import numpy as np
 import logging
 
 from ..samples import (
-        MakeSampleFunc, zone_id_from_index, make_unprocessed_sample,
+        MakeSampleFunc, MakeSampleArgs,
+        zone_id_from_index, make_unprocessed_sample,
 )
 from ..database_io import (
         open_db, select_split, select_curriculum, select_metadatum
@@ -64,8 +65,16 @@ class MacromolDataset(Dataset):
             self.db_cache = {}
 
         zone_id, rng = zone_id_from_index(i, self.zone_ids)
+        sample = MakeSampleArgs(
+                db=self.db,
+                db_cache=self.db_cache,
+                split=self.split,
+                i=i,
+                zone_id=zone_id,
+                rng=rng,
+        )
 
-        return self.make_sample(self.db, self.db_cache, rng, zone_id)
+        return self.make_sample(sample)
 
 def _filter_zones_by_curriculum(zone_ids, curriculum):
     mask = np.isin(zone_ids, curriculum)

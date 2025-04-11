@@ -1,10 +1,10 @@
 import macromol_voxelize as mmvox
 
-from macromol_gym_unsupervised.lightning import (
-        MacromolDataModule, MakeSampleFuncs, require_split_dict,
-)
+from macromol_gym_unsupervised import MakeSampleFunc, MakeSampleArgs
+from macromol_gym_unsupervised.lightning import MacromolDataModule
 from .. import ImageParams, NeighborParams, cube_faces
 from functools import partial
+from dataclasses import replace
 
 from typing import Optional
 from numpy.typing import ArrayLike
@@ -34,7 +34,7 @@ class MacromolNeighborImageDataModule(MacromolDataModule):
             normalize_std: ArrayLike = 1,
 
             # Dataset parameters:
-            make_sample: MakeSampleFuncs = None,
+            make_sample: Optional[MakeSampleFunc] = None,
             max_difficulty: float = 1,
 
             # Data loader parameters:
@@ -57,9 +57,11 @@ class MacromolNeighborImageDataModule(MacromolDataModule):
         elif neighbor_padding_A is not None:
             neighbor_distance_A = grid.length_A + neighbor_padding_A
 
-        def make_sample_for_split(split, noise):
-            return partial(
-                    require_split_dict(make_sample)[split],
+        super().__init__(
+                db_path=db_path,
+                make_sample=partial(
+                    _make_sample_toggle_noise,
+                    make_sample=make_sample,
                     img_params=ImageParams(
                         grid=grid,
                         atom_radius_A=atom_radius_A,
@@ -70,18 +72,11 @@ class MacromolNeighborImageDataModule(MacromolDataModule):
                     neighbor_params=NeighborParams(
                         direction_candidates=direction_candidates,
                         distance_A=neighbor_distance_A,
-                        noise_max_distance_A=noise_max_distance_A if noise else 0,
-                        noise_max_angle_deg=noise_max_angle_deg if noise else 0,
+                        noise_max_distance_A=noise_max_distance_A,
+                        noise_max_angle_deg=noise_max_angle_deg,
                     ),
-            )
-
-        super().__init__(
-                db_path=db_path,
-                make_sample={
-                    'train': make_sample_for_split('train', noise=True),
-                    'val': make_sample_for_split('val', noise=add_noise_during_validation),
-                    'test': make_sample_for_split('test', noise=add_noise_during_validation),
-                },
+                    add_noise_during_validation=add_noise_during_validation,
+                ),
                 max_difficulty=max_difficulty,
                 batch_size=batch_size,
                 train_epoch_size=train_epoch_size,
@@ -90,4 +85,25 @@ class MacromolNeighborImageDataModule(MacromolDataModule):
                 identical_epochs=identical_epochs,
                 num_workers=num_workers,
         )
+
+
+def _make_sample_toggle_noise(
+        sample: MakeSampleArgs,
+        *,
+        make_sample: MakeSampleFunc,
+        img_params: ImageParams,
+        neighbor_params: NeighborParams,
+        add_noise_during_validation: bool,
+):
+    if sample.split in ('val', 'test') and not add_noise_during_validation:
+        neighbor_params = replace(
+            noise_max_distance_A=0,
+            noise_max_angle_deg=0,
+        )
+
+    return make_sample(
+            sample,
+            img_params=img_params,
+            neighbor_params=neighbor_params,
+    )
 

@@ -7,13 +7,20 @@ from .database_io import (
         select_cached_metadatum, select_zone_center_A, select_zone_atoms,
 )
 from macromol_dataframe import transform_atom_coords
+from dataclasses import dataclass
 
 from typing import TypeAlias, Callable, Any
 
-MakeSampleFunc: TypeAlias = Callable[
-        [sqlite3.Connection, dict[str, Any], np.random.Generator, int],
-        Any,
-]
+@dataclass(kw_only=True)
+class MakeSampleArgs:
+    db: sqlite3.Connection
+    db_cache: dict[str, Any]
+    split: str
+    i: int
+    zone_id: int
+    rng: np.random.Generator
+
+MakeSampleFunc: TypeAlias = Callable[[MakeSampleArgs], Any]
 
 def zone_id_from_index(i, zone_ids):
     # If *i* continues to increment between epochs, then we will sample 
@@ -22,10 +29,18 @@ def zone_id_from_index(i, zone_ids):
     rng = np.random.default_rng(i)
     return zone_id, rng
 
-def make_unprocessed_sample(db, db_cache, rng, zone_id):
-    return dict(rng=rng, zone_id=zone_id)
+def make_unprocessed_sample(sample: MakeSampleArgs):
+    return dict(
+            i=sample.i,
+            zone_id=sample.zone_id,
+            rng=sample.rng,
+    )
 
-def make_unsupervised_sample(db, db_cache, rng, zone_id):
+def make_unsupervised_sample(sample: MakeSampleArgs):
+    db, db_cache = sample.db, sample.db_cache
+    zone_id = sample.zone_id
+    rng = sample.rng
+
     atoms_i = select_zone_atoms(db, zone_id)
     zone_center_A = select_zone_center_A(db, zone_id)
     zone_size_A = select_cached_metadatum(db, db_cache, 'zone_size_A')
@@ -34,18 +49,17 @@ def make_unsupervised_sample(db, db_cache, rng, zone_id):
     frame_ia = sample_frame(rng, origin_i)
 
     return dict(
-            rng=rng,
-            zone_id=zone_id,
+            **make_unprocessed_sample(sample),
             atoms_i=atoms_i,
             frame_ia=frame_ia,
     )
 
 def make_unsupervised_image_sample(
-        db, db_cache, rng, zone_id,
+        sample: MakeSampleArgs,
         *,
         img_params: ImageParams,
 ):
-    x = make_unsupervised_sample(db, db_cache, rng, zone_id)
+    x = make_unsupervised_sample(sample)
 
     atoms_a = transform_atom_coords(x['atoms_i'], x['frame_ia'])
     img, img_atoms_a = image_from_atoms(atoms_a, img_params)

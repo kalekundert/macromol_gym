@@ -16,9 +16,9 @@ def test_macromol_dataset(tmp_path):
     db_path = tmp_path / 'db.sqlite'
     db, *_ = make_db(db_path, split='train')
 
-    def make_unsupervised_image_tensor(db, db_cache, rng, zone_id):
+    def make_unsupervised_image_tensor(sample):
         x = mmgu.make_unsupervised_image_sample(
-                db, db_cache, rng, zone_id,
+                sample,
                 img_params=mmgu.ImageParams(
                     grid=mmvox.Grid(
                         length_voxels=5,

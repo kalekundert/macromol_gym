@@ -8,14 +8,12 @@ from ..samples import MakeSampleFunc
 from ..utils import get_num_workers
 from torch.utils.data import DataLoader
 from torch_deterministic import InfiniteSampler, collate_rngs
-from collections.abc import Mapping
 from functools import partial
 
 from pathlib import Path
-from typing import TypeAlias, Optional, Callable
+from typing import Optional, Callable
 from numpy.typing import ArrayLike
 
-MakeSampleFuncs: TypeAlias = MakeSampleFunc | Mapping[str, MakeSampleFunc]
 log = logging.getLogger('macromol_gym')
 
 class MacromolDataModule(L.LightningDataModule):
@@ -26,7 +24,7 @@ class MacromolDataModule(L.LightningDataModule):
             *,
 
             # Dataset parameters:
-            make_sample: Optional[MakeSampleFuncs] = None,
+            make_sample: Optional[MakeSampleFunc] = None,
             max_difficulty: float = 1,
             truncate_dataset: Optional[int] = None,
 
@@ -42,13 +40,12 @@ class MacromolDataModule(L.LightningDataModule):
         super().__init__()
 
         num_workers = get_num_workers(num_workers)
-        make_sample_by_split = require_split_dict(make_sample)
 
         def make_dataloader(split, epoch_size):
             dataset = MacromolDataset(
                 db_path=db_path,
                 split=split,
-                make_sample=make_sample_by_split[split],
+                make_sample=make_sample,
                 max_difficulty=max_difficulty if split == 'train' else 1,
                 truncate_dataset=truncate_dataset,
             )
@@ -118,7 +115,7 @@ class MacromolImageDataModule(MacromolDataModule):
             normalize_std: ArrayLike = 1,
 
             # Dataset parameters:
-            make_sample: MakeSampleFuncs = None,
+            make_sample: Optional[MakeSampleFunc] = None,
             max_difficulty: float = 1,
             truncate_dataset: Optional[int] = None,
 
@@ -157,8 +154,3 @@ class MacromolImageDataModule(MacromolDataModule):
                 collate_fn=collate_fn,
         )
 
-def require_split_dict(x):
-    return x if isinstance(x, Mapping) else {
-            k: x
-            for k in ('train', 'val', 'test')
-    }
