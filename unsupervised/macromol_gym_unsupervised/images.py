@@ -16,10 +16,14 @@ class ImageParams:
     normalize_mean: ArrayLike = 0
     normalize_std: ArrayLike = 1
 
+    def resolve_atom_radius_A(self):
+        if self.atom_radius_A is None:
+            return self.grid.resolution_A / 2
+        else:
+            return self.atom_radius_A
+
 def image_from_atoms(atoms, img_params):
-    atom_radius_A = img_params.atom_radius_A
-    if atom_radius_A is None:
-        atom_radius_A = img_params.grid.resolution_A / 2
+    atom_radius_A = img_params.resolve_atom_radius_A()
 
     mmvox_img_params = mmvox.ImageParams(
             channels=(
