@@ -53,6 +53,8 @@ class MacromolDataModule(L.LightningDataModule):
             split_size = len(dataset)
             if epoch_size is None:
                 epoch_size = split_size
+            if callable(epoch_size):
+                epoch_size = epoch_size(split_size)
 
             log.info(
                     "configure dataloader: split=%s split_size=%d epoch_size=%d batch_size=%d num_workers=%d",
