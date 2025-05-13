@@ -3,6 +3,7 @@ import macromol_voxelize as mmvox
 from macromol_gym_unsupervised import MakeSampleFunc, MakeSampleArgs
 from macromol_gym_unsupervised.lightning import MacromolDataModule
 from .. import ImageParams, NeighborParams, cube_faces
+from ..torch import make_neighbor_image_tensors
 from functools import partial
 from dataclasses import replace
 
@@ -57,6 +58,9 @@ class MacromolNeighborImageDataModule(MacromolDataModule):
         elif neighbor_padding_A is not None:
             neighbor_distance_A = grid.length_A + neighbor_padding_A
 
+        if make_sample is None:
+            make_sample = make_neighbor_image_tensors
+
         super().__init__(
                 db_path=db_path,
                 make_sample=partial(
@@ -97,8 +101,9 @@ def _make_sample_toggle_noise(
 ):
     if sample.split in ('val', 'test') and not add_noise_during_validation:
         neighbor_params = replace(
-            noise_max_distance_A=0,
-            noise_max_angle_deg=0,
+                neighbor_params,
+                noise_max_distance_A=0,
+                noise_max_angle_deg=0,
         )
 
     return make_sample(
