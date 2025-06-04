@@ -28,6 +28,8 @@ def copy_db_to_tmp(src_path, dest_name='db.sqlite', write=False, noop=False):
         if write:
             shutil.copy(dest_path, src_path)
 
+    log.info("clean up temporary database")
+
 def get_num_workers(num_workers: Optional[int]) -> int:
     if num_workers is not None:
         return num_workers
