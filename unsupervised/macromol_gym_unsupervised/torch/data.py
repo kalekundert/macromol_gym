@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+import sqlite3
 
 from ..samples import (
         MakeSampleFunc, MakeSampleArgs,
@@ -39,8 +40,12 @@ class MacromolDataset(Dataset):
         db = open_db(db_path)
 
         self.zone_ids = select_split(db, split)
-        self.polymer_labels = select_metadatum(db, 'polymer_labels')
-        self.cath_labels = select_metadatum(db, 'cath_labels')
+
+        try:
+            self.polymer_labels = select_metadatum(db, 'polymer_labels')
+            self.cath_labels = select_metadatum(db, 'cath_labels')
+        except sqlite3.OperationalError:
+            pass
 
         if max_difficulty < 1:
             n = len(self.zone_ids)

@@ -6,7 +6,7 @@ from .random import sample_frame, sample_coord_from_cube
 from .database_io import (
         select_cached_metadatum, select_zone_center_A, select_zone_atoms,
 )
-from macromol_dataframe import transform_atom_coords
+from macromol_dataframe import transform_atom_coords, Atoms
 from dataclasses import dataclass
 
 from typing import TypeAlias, Callable, Any
@@ -22,6 +22,11 @@ class MakeSampleArgs:
 
 MakeSampleFunc: TypeAlias = Callable[[MakeSampleArgs], Any]
 
+def keep_all_atoms(atoms: Atoms) -> Atoms:
+    return atoms
+
+FilterAtomsFunc: TypeAlias = Callable[[Atoms], Atoms]
+
 def zone_id_from_index(i, zone_ids):
     # If *i* continues to increment between epochs, then we will sample 
     # different rotations/translations in each epoch.  Otherwise, we won't.
@@ -36,12 +41,16 @@ def make_unprocessed_sample(sample: MakeSampleArgs):
             rng=sample.rng,
     )
 
-def make_unsupervised_sample(sample: MakeSampleArgs):
+def make_unsupervised_sample(
+        sample: MakeSampleArgs,
+        *,
+        filter_atoms: FilterAtomsFunc = keep_all_atoms,
+):
     db, db_cache = sample.db, sample.db_cache
     zone_id = sample.zone_id
     rng = sample.rng
 
-    atoms_i = select_zone_atoms(db, zone_id)
+    atoms_i = filter_atoms(select_zone_atoms(db, zone_id))
     zone_center_A = select_zone_center_A(db, zone_id)
     zone_size_A = select_cached_metadatum(db, db_cache, 'zone_size_A')
 
@@ -58,8 +67,9 @@ def make_unsupervised_image_sample(
         sample: MakeSampleArgs,
         *,
         img_params: ImageParams,
+        **kwargs,
 ):
-    x = make_unsupervised_sample(sample)
+    x = make_unsupervised_sample(sample, **kwargs)
 
     atoms_a = transform_atom_coords(x['atoms_i'], x['frame_ia'])
     img, img_atoms_a = image_from_atoms(atoms_a, img_params)
